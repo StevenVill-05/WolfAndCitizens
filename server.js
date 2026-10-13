@@ -4,6 +4,9 @@ const { Server } = require('socket.io');
 const os = require('os');
 const QRCode = require('qrcode');
 
+// Import your modular role actions handler
+const { handlePlayerAction } = require('./roleActions');
+
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
@@ -80,6 +83,11 @@ io.on('connection', (socket) => {
         });
 
         io.emit('game-started', players);
+    });
+
+    // Delegate player actions to our modular role actions registry
+    socket.on('player-action', (data) => {
+        handlePlayerAction(socket, data, io, players);
     });
 
     // Handle disconnections
