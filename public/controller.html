@@ -3,46 +3,112 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Controller - Wolf & Citizens</title>
+    <title>Council Controller</title>
+    <!-- Import Gothic / Medieval Font -->
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&display=swap" rel="stylesheet">
     <style>
-        body { font-family: Arial, sans-serif; text-align: center; background: #111; color: white; padding-top: 40px; }
-        .screen { display: none; margin-top: 20px; }
-        #role-display { color: #e74c3c; font-size: 24px; margin: 10px 0; font-weight: bold; }
-        button { font-size: 18px; padding: 12px 24px; background: #e74c3c; color: white; border: none; border-radius: 8px; cursor: pointer; margin-top: 15px; }
-        button:active { background: #c0392b; }
-        .discuss-text { font-size: 32px; color: #2ecc71; font-weight: bold; margin-top: 50px; }
+        body {
+            font-family: 'Georgia', serif;
+            text-align: center;
+            /* Aged parchment / dark stone background */
+            background: radial-gradient(circle, #2b2621 0%, #110e0c 100%);
+            color: #d8cca6;
+            margin: 0;
+            padding: 20px;
+        }
+
+        h2, h3 {
+            font-family: 'Cinzel', serif;
+            color: #d4af37; /* Antique Gold */
+            letter-spacing: 1px;
+        }
+
+        .screen {
+            display: none;
+            background: #1c1817;
+            border: 2px solid #5c4033; /* Rustic wood frame */
+            border-radius: 8px;
+            padding: 20px;
+            max-width: 400px;
+            margin: 20px auto;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.8);
+        }
+
+        #waiting-screen { display: block; } /* Default active screen */
+
+        /* Gothic Buttons */
+        button {
+            font-family: 'Cinzel', serif;
+            background: #a93226; /* Crimson Red */
+            color: #f0e6d2;
+            border: 2px solid #d4af37;
+            padding: 12px 20px;
+            border-radius: 4px;
+            font-size: 14px;
+            cursor: pointer;
+            width: 100%;
+            margin-top: 10px;
+            letter-spacing: 1px;
+            box-shadow: 0 3px 8px rgba(0,0,0,0.5);
+            transition: background 0.2s;
+        }
+
+        button:hover {
+            background: #c0392b;
+        }
+
+        /* Target selection list styling */
+        #target-list button {
+            background: #231c18;
+            border: 1px solid #5c4033;
+            color: #d8cca6;
+            text-align: left;
+            padding: 10px;
+            margin: 6px 0;
+        }
+
+        #target-list button:hover {
+            background: #3d2817;
+            border-color: #d4af37;
+        }
+
+        #role-display {
+            font-family: 'Cinzel', serif;
+            font-size: 24px;
+            color: #b22222;
+            margin: 15px 0;
+            text-shadow: 1px 1px 2px #000;
+        }
     </style>
 </head>
 <body>
-    <h2>Mobile Controller</h2>
-    <div id="waiting-screen">
-        <p>Connected to host! Waiting for game to start...</p>
+
+    <!-- WAITING SCREEN -->
+    <div id="waiting-screen" class="screen">
+        <h2>Council Chamber</h2>
+        <p>Awaiting the High Council to commence the session...</p>
+        <div id="role-display">...</div>
     </div>
 
-    <!-- GAME CONTAINER (Hidden until game starts) -->
-    <div id="game-container" style="display: none;">
-        <p>Your Secret Role:</p>
-        <div id="role-display">Loading...</div>
-        <hr style="border-color: #333; margin: 20px 0;">
+    <!-- GAMEPLAY / NIGHT ACTION SCREEN -->
+    <div id="game-container" class="screen">
+        <h3>Your Secret Role</h3>
+        <div id="role-display" style="font-size: 20px; color: #d4af37;">...</div>
 
-        <!-- DAY PHASE VIEW -->
-        <div id="day-controller" class="screen">
-            <div class="discuss-text">💬 DISCUSS</div>
-            <p style="color: #aaa; margin-top: 15px;">Talk with other players to find the wolves.</p>
+        <div id="day-controller">
+            <p>The council gathers in the light of day. Discuss and deliberate.</p>
         </div>
 
-       <!-- NIGHT PHASE -->
-        <div id="night-controller" class="screen">
-            <div class="night-box">
-                <h3 style="color: #8e44ad; margin-top: 0;">🌙 Night Phase</h3>
-                <p style="font-size: 14px; color: #ccc;">Select your target:</p>
-                <div id="target-list" style="margin-bottom: 15px; max-height: 150px; overflow-y: auto;">
-                    <!-- Dynamic target selection buttons injected here -->
-                </div>
-                <button id="action-btn" style="display:none;">Confirm Action</button>
+        <div id="night-controller" style="display:none;">
+            <h3 style="color: #8e44ad;">🌙 The Witching Hour</h3>
+            <p style="font-size: 13px; color: #b8a38a;">Choose your target from the council seats:</p>
+            <div id="target-list" style="max-height: 180px; overflow-y: auto; text-align: left;">
+                <!-- Dynamic target buttons injected here -->
             </div>
+            <button id="action-btn" style="display:none; background: #8e44ad; border-color: #d4af37;">Confirm Dark Decree</button>
         </div>
     </div>
+
     <script src="/socket.io/socket.io.js"></script>
     <script>
         const socket = io();
@@ -57,16 +123,18 @@
         // Send registration with the persistent ID
         socket.emit('register-player', { persistentId });
 
+        let selectedTargetId = null;
+
         // Listen for when the host kicks this player
         socket.on('kicked', () => {
             localStorage.removeItem('wolf_player_id');
-            document.body.innerHTML = `<h2 style="color:red; text-align:center; margin-top:50px;">You were kicked by the host.</h2>`;
+            document.body.innerHTML = `<h2 style="color:#a93226; text-align:center; margin-top:50px; font-family:'Cinzel',serif;">You have been banished from the council.</h2>`;
         });
 
         socket.on('assigned-role', (data) => {
             document.getElementById('waiting-screen').style.display = 'none';
             document.getElementById('game-container').style.display = 'block';
-            document.getElementById('role-display').innerText = data.role;
+            document.querySelectorAll('#role-display').forEach(el => el.innerText = data.role);
         });
 
         socket.on('phase-changed', (data) => {
@@ -78,15 +146,12 @@
             } else {
                 dayCtrl.style.display = 'block';
                 nightCtrl.style.display = 'none';
+                selectedTargetId = null;
+                document.getElementById('action-btn').style.display = 'none';
             }
         });
 
-        document.getElementById('action-btn').addEventListener('click', () => {
-            socket.emit('player-action', { action: 'role-action-triggered', timestamp: Date.now() });
-        });
-
-        let selectedTargetId = null;
-
+        // Listen for player updates to populate the night target list
         socket.on('update-players', (players) => {
             const targetListEl = document.getElementById('target-list');
             targetListEl.innerHTML = '';
@@ -94,39 +159,32 @@
             players.forEach((player, index) => {
                 if (player.alive) {
                     const btn = document.createElement('button');
-                    btn.innerText = `Player ${index + 1}`;
-                    btn.style.display = 'block';
-                    btn.style.width = '100%';
-                    btn.style.margin = '5px 0';
-                    btn.style.padding = '8px';
-                    btn.style.background = '#2c2c2c';
-                    btn.style.color = 'white';
-                    btn.style.border = '1px solid #444';
-                    btn.style.borderRadius = '4px';
-                    btn.style.cursor = 'pointer';
-
+                    btn.innerText = `Seat ${index + 1}`;
                     btn.onclick = () => {
-                        document.querySelectorAll('#target-list button').forEach(b => b.style.background = '#2c2c2c');
-                        btn.style.background = '#e74c3c';
-                        // FIX: Use persistentId so it survives socket reconnections
+                        document.querySelectorAll('#target-list button').forEach(b => b.style.background = '#231c18');
+                        btn.style.background = '#5c4033';
                         selectedTargetId = player.persistentId;
                         document.getElementById('action-btn').style.display = 'block';
                     };
-
                     targetListEl.appendChild(btn);
                 }
             });
         });
 
-        // Submit action with target ID
+        // Submit action with target persistent ID
         document.getElementById('action-btn').addEventListener('click', () => {
             if (!selectedTargetId) {
-                alert('Please select a target first!');
+                alert('You must select a target soul first!');
                 return;
             }
             socket.emit('player-action', { targetId: selectedTargetId });
-            alert('Action confirmed for the night!');
+            alert('Your decree has been locked in shadow.');
             document.getElementById('action-btn').style.display = 'none';
+        });
+
+        // Listen for Seer / Oracle vision results
+        socket.on('seer-result', (data) => {
+            alert(data.message);
         });
     </script>
 </body>
