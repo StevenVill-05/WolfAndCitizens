@@ -1,10 +1,17 @@
 // roleActions.js
 
+
 const wolf = require('./roles/wolf');
+const citizen = require('./roles/citizen');
+const seer = require('./roles/seer');
+const doctor = require('./roles/doctor');
 
 // Map role names to their corresponding modular file handlers
 const roleActions = {
-    Wolf: wolf
+    Wolf: wolf,
+    Citizen: citizen,
+    Seer: seer,
+    Doctor: doctor
 };
 
 function handlePlayerAction(socket, data, io, players) {

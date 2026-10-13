@@ -5,41 +5,74 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Controller - Wolf & Citizens</title>
     <style>
-        body { font-family: Arial, sans-serif; text-align: center; background: #111; color: white; padding-top: 50px; }
-        #game-controls { display: none; margin-top: 30px; }
-        #role-display { color: #e74c3c; font-size: 28px; margin: 15px 0; font-weight: bold; }
-        button { font-size: 20px; padding: 15px 30px; background: #e74c3c; color: white; border: none; border-radius: 8px; cursor: pointer; margin-top: 20px; }
+        body { font-family: Arial, sans-serif; text-align: center; background: #111; color: white; padding-top: 40px; }
+        .screen { display: none; margin-top: 20px; }
+        #role-display { color: #e74c3c; font-size: 24px; margin: 10px 0; font-weight: bold; }
+        button { font-size: 18px; padding: 12px 24px; background: #e74c3c; color: white; border: none; border-radius: 8px; cursor: pointer; margin-top: 15px; }
         button:active { background: #c0392b; }
+        .discuss-text { font-size: 32px; color: #2ecc71; font-weight: bold; margin-top: 50px; }
     </style>
 </head>
 <body>
     <h2>Mobile Controller</h2>
     <div id="waiting-screen">
-        <p>Connected to host! Waiting for the game to start...</p>
+        <p>Connected to host! Waiting for game to start...</p>
     </div>
 
-    <div id="game-controls">
+    <!-- GAME CONTAINER (Hidden until game starts) -->
+    <div id="game-container" style="display: none;">
         <p>Your Secret Role:</p>
         <div id="role-display">Loading...</div>
-        <button id="action-btn">Perform Action</button>
+        <hr style="border-color: #333; margin: 20px 0;">
+
+        <!-- DAY PHASE VIEW -->
+        <div id="day-controller" class="screen">
+            <div class="discuss-text">💬 DISCUSS</div>
+            <p style="color: #aaa; margin-top: 15px;">Talk with other players to find the wolves.</p>
+        </div>
+
+        <!-- NIGHT PHASE VIEW -->
+        <div id="night-controller" class="screen">
+            <h3 style="color: #8e44ad;">🌙 Night Phase</h3>
+            <p>Perform your role action:</p>
+            <button id="action-btn">Execute Action</button>
+        </div>
     </div>
     
     <script src="/socket.io/socket.io.js"></script>
     <script>
         const socket = io();
-
-        // Tell the server this device is a player controller
         socket.emit('register-player');
 
-        // Listen for when the host starts the game and assigns roles
+        // When game starts, show role and default to Day view
         socket.on('assigned-role', (data) => {
             document.getElementById('waiting-screen').style.display = 'none';
-            document.getElementById('game-controls').style.display = 'block';
+            document.getElementById('game-container').style.display = 'block';
             document.getElementById('role-display').innerText = data.role;
+            
+            // Start default phase as Day
+            document.getElementById('day-controller').style.display = 'block';
+            document.getElementById('night-controller').style.display = 'none';
         });
 
+        // Listen for phase changes broadcasted by the server
+        socket.on('phase-changed', (data) => {
+            const dayCtrl = document.getElementById('day-controller');
+            const nightCtrl = document.getElementById('night-controller');
+
+            if (data.phase === 'night') {
+                dayCtrl.style.display = 'none';
+                nightCtrl.style.display = 'block';
+            } else {
+                dayCtrl.style.display = 'block';
+                nightCtrl.style.display = 'none';
+            }
+        });
+
+        // Send role action back to server
         document.getElementById('action-btn').addEventListener('click', () => {
-            socket.emit('player-action', { action: 'button-pressed', timestamp: Date.now() });
+            socket.emit('player-action', { action: 'role-action-triggered', timestamp: Date.now() });
+            alert('Action submitted!');
         });
     </script>
 </body>

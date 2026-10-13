@@ -10,30 +10,125 @@
             background: #121212; 
             color: #ffffff; 
             margin: 0; 
-            padding: 50px; 
+            padding: 40px; 
         }
-        h1 { color: #2ecc71; }
-        #game-board { margin-top: 30px; background: #1e1e1e; padding: 40px; border-radius: 12px; display: inline-block; min-width: 500px; }
+        h1 { color: #2ecc71; margin-bottom: 5px; }
+        #phase-title { font-size: 24px; color: #f39c12; margin-bottom: 20px; }
+        
+        /* Circular Player Layout */
+        .circle-arena { 
+            position: relative; width: 400px; height: 400px; 
+            margin: 40px auto; border: 2px dashed #444; border-radius: 50%; 
+        }
+        .player-icon {
+            position: absolute; width: 60px; height: 60px; 
+            background: #3498db; border-radius: 50%; display: flex; 
+            align-items: center; justify-content: center; font-weight: bold;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.5); transition: all 0.3s ease;
+        }
+        .player-icon.dead {
+            background: #555 !important;
+            filter: grayscale(100%);
+            opacity: 0.4;
+        }
+
+        /* Night View Styling */
+        #night-view { display: none; margin-top: 100px; }
+        #night-view h2 { font-size: 48px; color: #8e44ad; font-style: italic; letter-spacing: 2px; }
+
+        #toggle-phase-btn {
+            font-size: 16px; padding: 10px 20px; background: #e74c3c; 
+            color: white; border: none; border-radius: 6px; cursor: pointer; margin-top: 20px;
+        }
     </style>
 </head>
 <body>
 
-    <h1>🐺 Wolf & Citizens - Game in Progress</h1>
-    
-    <div id="game-board">
-        <h3>Game Arena</h3>
-        <p>Waiting for player actions from phones...</p>
-        <div id="live-feed">No actions yet.</div>
+    <h1>🐺 Wolf & Citizens - Game Arena</h1>
+    <div id="phase-title">Current Phase: <span id="phase-name">Day</span></div>
+
+    <!-- DAY VIEW: Circular Player Grid -->
+    <div id="day-view">
+        <div class="circle-arena" id="circle-arena">
+            <!-- Dynamic player icons injected here -->
+        </div>
     </div>
+
+    <!-- NIGHT VIEW: Atmospheric Screen -->
+    <div id="night-view">
+        <h2>🌙 "The Night whispers..."</h2>
+        <p>Roles are performing their secret actions.</p>
+    </div>
+
+    <button id="toggle-phase-btn">Switch to Night Phase</button>
 
     <script src="/socket.io/socket.io.js"></script>
     <script>
         const socket = io();
+        socket.emit('register-host');
 
-        // Listen for actions sent by the mobile controllers
-        socket.on('game-update', (data) => {
-            document.getElementById('live-feed').innerText = 
-                `Latest Action: ${data.action} from socket ${data.playerId.substring(0, 5)}`;
+        let currentPlayers = [];
+
+        // Listen for phase changes
+        socket.on('phase-changed', (data) => {
+            const dayView = document.getElementById('day-view');
+            const nightView = document.getElementById('night-view');
+            const phaseName = document.getElementById('phase-name');
+            const toggleBtn = document.getElementById('toggle-phase-btn');
+
+            phaseName.innerText = data.phase.toUpperCase();
+            currentPlayers = data.players;
+
+            if (data.phase === 'night') {
+                dayView.style.display = 'none';
+                nightView.style.display = 'block';
+                toggleBtn.innerText = 'Switch to Day Phase';
+                toggleBtn.style.background = '#f39c12';
+            } else {
+                dayView.style.display = 'block';
+                nightView.style.display = 'none';
+                toggleBtn.innerText = 'Switch to Night Phase';
+                toggleBtn.style.background = '#e74c3c';
+                renderPlayerCircle(currentPlayers);
+            }
+        });
+
+        // Render players dynamically in a circle
+        function renderPlayerCircle(players) {
+            const arena = document.getElementById('circle-arena');
+            arena.innerHTML = '';
+            
+            const radius = 160; // Distance from center
+            const centerX = 200; // Half of arena width
+            const centerY = 200; // Half of arena height
+            const total = players.length;
+
+            players.forEach((player, index) => {
+                // Calculate circular coordinates using trigonometry
+                const angle = (index / total) * 2 * Math.PI;
+                const x = centerX + radius * Math.cos(angle) - 30; // Offset by half icon width
+                const y = centerY + radius * Math.sin(angle) - 30;
+
+                const div = document.createElement('div');
+                div.className = `player-icon ${player.alive ? '' : 'dead'}`;
+                div.style.left = `${x}px`;
+                div.style.top = `${y}px`;
+                div.innerText = `P${index + 1}`;
+                div.title = `Role: ${player.role || 'Unknown'} (${player.alive ? 'Alive' : 'Dead'})`;
+
+                arena.appendChild(div);
+            });
+        }
+
+        // Host button to switch phases
+        document.getElementById('toggle-phase-btn').addEventListener('click', () => {
+            socket.emit('toggle-phase');
+        });
+
+        // Initial listener for player list updates
+        socket.on('update-players', (players) => {
+            currentPlayers = players;
+            renderPlayerCircle(players);
         });
     </script>
 </body>
