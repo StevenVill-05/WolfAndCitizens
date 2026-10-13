@@ -65,18 +65,21 @@ io.on('connection', (socket) => {
         io.emit('update-players', players);
     });
     
-    // Handle host starting the game
-    socket.on('start-game', () => {
-        console.log('Host started the game!');
-        io.emit('game-started');
-    });
+    // Handle host starting the game with selected roles
+    socket.on('start-game', (selectedRoles) => {
+        console.log('Host started the game with roles:', selectedRoles);
 
-    // Listen for button presses or actions from the phone controller
-    socket.on('player-action', (data) => {
-        data.playerId = socket.id;
-        console.log('Received action from controller:', data);
-        // Broadcast this action to the PC game screen
-        io.emit('game-update', data);
+        // Shuffle players and assign roles randomly
+        players.forEach((player, index) => {
+            // Cycle through selected roles if there are more players than roles
+            const assignedRole = selectedRoles[index % selectedRoles.length];
+            player.role = assignedRole;
+            
+            // Send the specific role directly to each connected player's socket
+            io.to(player.id).emit('assigned-role', { role: assignedRole });
+        });
+
+        io.emit('game-started', players);
     });
 
     // Handle disconnections

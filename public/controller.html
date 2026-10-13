@@ -7,7 +7,8 @@
     <style>
         body { font-family: Arial, sans-serif; text-align: center; background: #111; color: white; padding-top: 50px; }
         #game-controls { display: none; margin-top: 30px; }
-        button { font-size: 20px; padding: 15px 30px; background: #e74c3c; color: white; border: none; border-radius: 8px; cursor: pointer; }
+        #role-display { color: #e74c3c; font-size: 28px; margin: 15px 0; font-weight: bold; }
+        button { font-size: 20px; padding: 15px 30px; background: #e74c3c; color: white; border: none; border-radius: 8px; cursor: pointer; margin-top: 20px; }
         button:active { background: #c0392b; }
     </style>
 </head>
@@ -18,7 +19,8 @@
     </div>
 
     <div id="game-controls">
-        <p>You are in the game!</p>
+        <p>Your Secret Role:</p>
+        <div id="role-display">Loading...</div>
         <button id="action-btn">Perform Action</button>
     </div>
     
@@ -29,16 +31,16 @@
         // Tell the server this device is a player controller
         socket.emit('register-player');
 
-        // Listen for when the host clicks start game
-        socket.on('game-started', () => {
+        // Listen for when the host starts the game and assigns roles
+        socket.on('assigned-role', (data) => {
             document.getElementById('waiting-screen').style.display = 'none';
             document.getElementById('game-controls').style.display = 'block';
+            document.getElementById('role-display').innerText = data.role;
         });
 
         document.getElementById('action-btn').addEventListener('click', () => {
             socket.emit('player-action', { action: 'button-pressed', timestamp: Date.now() });
         });
     </script>
-
 </body>
 </html>

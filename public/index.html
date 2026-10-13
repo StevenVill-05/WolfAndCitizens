@@ -13,51 +13,74 @@
             padding: 40px; 
         }
         h1 { color: #e74c3c; margin-bottom: 5px; }
-        .container { display: flex; justify-content: center; gap: 40px; margin-top: 30px; align-items: flex-start; }
-        .panel { background: #1e1e1e; padding: 25px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); width: 350px; }
-        #qrcode { background: white; padding: 15px; display: inline-block; border-radius: 8px; margin-top: 15px; }
+        .container { display: flex; justify-content: center; gap: 30px; margin-top: 30px; align-items: flex-start; flex-wrap: wrap; }
+        .panel { background: #1e1e1e; padding: 25px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); width: 320px; text-align: left; }
+        .panel h3 { margin-top: 0; text-align: center; }
+        #qrcode { background: white; padding: 15px; display: block; border-radius: 8px; margin: 15px auto; width: fit-content; }
         #qrcode img { display: block; }
-        #player-list { list-style: none; padding: 0; text-align: left; max-height: 200px; overflow-y: auto; }
-        #player-list li { background: #2c2c2c; padding: 10px; margin-bottom: 8px; border-radius: 6px; }
+        #player-list { list-style: none; padding: 0; max-height: 150px; overflow-y: auto; }
+        #player-list li { background: #2c2c2c; padding: 8px 12px; margin-bottom: 6px; border-radius: 6px; font-size: 14px; }
+        
+        /* Role Bubbles Styling */
+        .bubbles-container { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 15px; justify-content: center; }
+        .role-bubble { 
+            background: #2c2c2c; color: #aaa; padding: 8px 14px; 
+            border-radius: 20px; cursor: pointer; font-size: 14px; 
+            border: 2px solid #444; transition: all 0.2s ease; 
+            user-select: none;
+        }
+        .role-bubble.active { background: #e74c3c; color: white; border-color: #c0392b; }
+        
         #start-btn { 
-            margin-top: 20px; font-size: 18px; padding: 12px 24px; 
+            margin-top: 20px; font-size: 18px; padding: 12px; 
             background: #2ecc71; color: white; border: none; 
-            border-radius: 6px; cursor: pointer; display: none; width: 100%;
+            border-radius: 6px; cursor: pointer; width: 100%; display: none; 
         }
         #start-btn:hover { background: #27ae60; }
-        .url-display { font-size: 14px; color: #aaa; word-break: break-all; margin-top: 10px; }
+        .url-display { font-size: 12px; color: #aaa; word-break: break-all; text-align: center; margin-top: 10px; }
     </style>
 </head>
 <body>
 
     <h1>🐺 Wolf & Citizens</h1>
-    <p>Host Lobby</p>
+    <p>Host Lobby & Setup</p>
 
     <div class="container">
         <!-- QR Code Panel -->
         <div class="panel">
             <h3>Join Game</h3>
-            <p>Scan with your phone camera:</p>
+            <p style="font-size: 13px; text-align: center;">Scan with your phone camera:</p>
             <div id="qrcode">
-                <img id="qr-img" alt="Scan to play" />
+                <img id="qr-img" alt="Scan to play" width="150" height="150" />
             </div>
             <div class="url-display" id="url-text">Loading URL...</div>
         </div>
 
-        <!-- Lobby Players Panel -->
+        <!-- Role Configuration Panel -->
         <div class="panel">
-            <h3>Connected Players (<span id="player-count">0</span>)</h3>
+            <h3>Role Pool</h3>
+            <p style="font-size: 12px; color: #aaa; text-align: center;">Click to include/exclude roles:</p>
+            <div class="bubbles-container" id="role-bubbles">
+                <div class="role-bubble active" data-role="Wolf">🐺 Wolf</div>
+                <div class="role-bubble active" data-role="Citizen">🧑 Citizen</div>
+                <div class="role-bubble active" data-role="Seer">🔮 Seer</div>
+                <div class="role-bubble active" data-role="Doctor">💉 Doctor</div>
+            </div>
+        </div>
+
+        <!-- Connected Players Panel -->
+        <div class="panel">
+            <h3>Players (<span id="player-count">0</span>)</h3>
             <ul id="player-list">
                 <li>Waiting for players to join...</li>
             </ul>
             <button id="start-btn">Start Game</button>
         </div>
     </div>
-<script src="/socket.io/socket.io.js"></script>
+
+    <script src="/socket.io/socket.io.js"></script>
     <script>
         const socket = io();
-
-        // Tell the server this browser is the host
         socket.emit('register-host');
 
         fetch('/api/qrcode')
@@ -67,9 +90,15 @@
                 document.getElementById('url-text').innerText = data.controllerURL;
             });
 
-        // Listen for player updates from server
+        // Toggle role bubble active state
+        document.getElementById('role-bubbles').addEventListener('click', (e) => {
+            if (e.target.classList.contains('role-bubble')) {
+                e.target.classList.toggle('active');
+            }
+        });
+
+        // Listen for player updates
         socket.on('update-players', (players) => {
-            console.log("Received players update:", players);
             const listEl = document.getElementById('player-list');
             const countEl = document.getElementById('player-count');
             const startBtn = document.getElementById('start-btn');
@@ -90,11 +119,19 @@
             }
         });
 
+        // When host clicks start, collect active preset roles and send to server
         document.getElementById('start-btn').addEventListener('click', () => {
-            socket.emit('start-game');
+            const activeBubbles = document.querySelectorAll('.role-bubble.active');
+            const selectedRoles = Array.from(activeBubbles).map(b => b.getAttribute('data-role'));
+
+            if (selectedRoles.length === 0) {
+                alert('Please select at least one role bubble!');
+                return;
+            }
+
+            socket.emit('start-game', selectedRoles);
             window.location.href = '/game.html';
         });
     </script>
-
 </body>
 </html>
