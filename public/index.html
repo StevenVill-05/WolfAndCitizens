@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Wolf and Citizens - Main Screen</title>
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; background: #222; color: #fff; margin-top: 50px; }
+        #qrcode { margin: 20px auto; background: white; padding: 15px; display: inline-block; border-radius: 8px; }
+        #qrcode img { display: block; }
+    </style>
+</head>
+<body>
+    <h1>Wolf and Citizens</h1>
+    <p>Scan this QR code with your phone to join as a player!</p>
+    
+    <div id="qrcode">
+        <img id="qr-img" alt="Scan to play" />
+    </div>
+    <p id="url-text"></p>
+
+    <!-- Socket.io client script -->
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+
+        // Fetch the local network QR code from our server
+        fetch('/api/qrcode')
+            .then(res => res.json())
+            .then(data => {
+                document.getElementById('qr-img').src = data.qrImageURL;
+                document.getElementById('url-text').innerText = data.controllerURL;
+            });
+
+        // Listen for actions broadcasted by connected phones
+        socket.on('game-update', (data) => {
+            console.log("Game update received:", data);
+        });
+    </script>
+</body>
+</html>

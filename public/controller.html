@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Controller - Wolf & Citizens</title>
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; background: #111; color: white; padding-top: 50px; }
+        button { font-size: 20px; padding: 15px 30px; margin-top: 20px; background: #e74c3c; color: white; border: none; border-radius: 8px; cursor: pointer; }
+        button:active { background: #c0392b; }
+    </style>
+</head>
+<body>
+    <h2>Mobile Controller</h2>
+    <p>Connected to Wolf & Citizens Host</p>
+    <button id="action-btn">Perform Action</button>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+
+        document.getElementById('action-btn').addEventListener('click', () => {
+            // Send a test event to the server when the button is tapped
+            socket.emit('player-action', { action: 'button-pressed', timestamp: Date.now() });
+        });
+    </script>
+</body>
+</html>
