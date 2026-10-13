@@ -4,8 +4,8 @@ const { Server } = require('socket.io');
 const os = require('os');
 const QRCode = require('qrcode');
 
-// Import your modular role actions handler
-const { handlePlayerAction } = require('./roleActions');
+// Import modular role action handlers & night resolution
+const { handlePlayerAction, resolveNightActions } = require('./roleActions');
 
 const app = express();
 const server = http.createServer(app);
@@ -63,12 +63,10 @@ io.on('connection', (socket) => {
         let player = players.find(p => p.persistentId === persistentId);
 
         if (player) {
-            // Player is reconnecting! Update socket ID and mark connected
             player.id = socket.id;
             player.connected = true;
             console.log(`Player reconnected: ${persistentId} (Socket: ${socket.id})`);
         } else {
-            // Brand new player joining
             player = {
                 id: socket.id,
                 persistentId: persistentId || socket.id,
@@ -82,7 +80,6 @@ io.on('connection', (socket) => {
 
         io.emit('update-players', players);
 
-        // If game already started, send them their role immediately upon reconnecting
         if (player.role) {
             socket.emit('assigned-role', { role: player.role });
         }
@@ -107,7 +104,15 @@ io.on('connection', (socket) => {
 
     // Handle host switching between Day and Night phases
     socket.on('toggle-phase', () => {
-        currentPhase = currentPhase === 'day' ? 'night' : 'day';
+        if (currentPhase === 'night') {
+            // Transitioning from Night to Day -> Process priority actions (Kills, Saves, Seer)
+            resolveNightActions(io, players);
+            currentPhase = 'day';
+        } else {
+            // Transitioning from Day to Night
+            currentPhase = 'night';
+        }
+
         console.log(`Phase changed to: ${currentPhase}`);
         io.emit('phase-changed', { phase: currentPhase, players });
     });

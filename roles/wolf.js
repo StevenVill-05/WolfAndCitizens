@@ -1,4 +1,9 @@
-module.exports = (socket, data, io, players) => {
-        console.log(`[WOLF ACTION] Player ${socket.id} chose to attack.`);
-        io.emit('game-log', { message: `A Wolf is hunting...` });
-    }
+module.exports = (socket, data, io, players, nightActionQueue) => {
+    nightActionQueue.push({
+        priority: 1, // Highest priority: Happens first
+        role: 'Wolf',
+        actorId: socket.id,
+        targetId: data.targetId
+    });
+    console.log(`[WOLF] Queued attack action on target: ${data.targetId}`);
+};

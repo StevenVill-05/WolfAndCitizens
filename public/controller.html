@@ -31,11 +31,16 @@
             <p style="color: #aaa; margin-top: 15px;">Talk with other players to find the wolves.</p>
         </div>
 
-        <!-- NIGHT PHASE VIEW -->
+       <!-- NIGHT PHASE -->
         <div id="night-controller" class="screen">
-            <h3 style="color: #8e44ad;">🌙 Night Phase</h3>
-            <p>Perform your role action:</p>
-            <button id="action-btn">Execute Action</button>
+            <div class="night-box">
+                <h3 style="color: #8e44ad; margin-top: 0;">🌙 Night Phase</h3>
+                <p style="font-size: 14px; color: #ccc;">Select your target:</p>
+                <div id="target-list" style="margin-bottom: 15px; max-height: 150px; overflow-y: auto;">
+                    <!-- Dynamic target selection buttons injected here -->
+                </div>
+                <button id="action-btn" style="display:none;">Confirm Action</button>
+            </div>
         </div>
     </div>
     <script src="/socket.io/socket.io.js"></script>
@@ -78,6 +83,50 @@
 
         document.getElementById('action-btn').addEventListener('click', () => {
             socket.emit('player-action', { action: 'role-action-triggered', timestamp: Date.now() });
+        });
+
+        let selectedTargetId = null;
+
+        socket.on('update-players', (players) => {
+            const targetListEl = document.getElementById('target-list');
+            targetListEl.innerHTML = '';
+            
+            players.forEach((player, index) => {
+                if (player.alive) {
+                    const btn = document.createElement('button');
+                    btn.innerText = `Player ${index + 1}`;
+                    btn.style.display = 'block';
+                    btn.style.width = '100%';
+                    btn.style.margin = '5px 0';
+                    btn.style.padding = '8px';
+                    btn.style.background = '#2c2c2c';
+                    btn.style.color = 'white';
+                    btn.style.border = '1px solid #444';
+                    btn.style.borderRadius = '4px';
+                    btn.style.cursor = 'pointer';
+
+                    btn.onclick = () => {
+                        document.querySelectorAll('#target-list button').forEach(b => b.style.background = '#2c2c2c');
+                        btn.style.background = '#e74c3c';
+                        // FIX: Use persistentId so it survives socket reconnections
+                        selectedTargetId = player.persistentId;
+                        document.getElementById('action-btn').style.display = 'block';
+                    };
+
+                    targetListEl.appendChild(btn);
+                }
+            });
+        });
+
+        // Submit action with target ID
+        document.getElementById('action-btn').addEventListener('click', () => {
+            if (!selectedTargetId) {
+                alert('Please select a target first!');
+                return;
+            }
+            socket.emit('player-action', { targetId: selectedTargetId });
+            alert('Action confirmed for the night!');
+            document.getElementById('action-btn').style.display = 'none';
         });
     </script>
 </body>
