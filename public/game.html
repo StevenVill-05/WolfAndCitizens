@@ -15,29 +15,33 @@
         h1 { color: #2ecc71; margin-bottom: 5px; }
         #phase-title { font-size: 24px; color: #f39c12; margin-bottom: 20px; }
         
-        /* Circular Player Layout */
+        /* Circular Player Arena */
         .circle-arena { 
-            position: relative; width: 400px; height: 400px; 
-            margin: 40px auto; border: 2px dashed #444; border-radius: 50%; 
+            position: relative; width: 450px; height: 450px; 
+            margin: 20px auto; border: 2px dashed #444; border-radius: 50%; 
         }
         .player-icon {
-            position: absolute; width: 60px; height: 60px; 
+            position: absolute; width: 75px; height: 75px; 
             background: #3498db; border-radius: 50%; display: flex; 
-            align-items: center; justify-content: center; font-weight: bold;
+            flex-direction: column; align-items: center; justify-content: center; 
+            font-weight: bold; font-size: 13px; color: white;
             box-shadow: 0 4px 10px rgba(0,0,0,0.5); transition: all 0.3s ease;
         }
         .player-icon.dead {
-            background: #555 !important;
+            background: #444 !important;
             filter: grayscale(100%);
-            opacity: 0.4;
+            opacity: 0.3;
+        }
+        .player-icon.disconnected {
+            border: 3px dashed #e74c3c;
         }
 
-        /* Night View Styling */
+        /* Night View Screen */
         #night-view { display: none; margin-top: 100px; }
         #night-view h2 { font-size: 48px; color: #8e44ad; font-style: italic; letter-spacing: 2px; }
 
         #toggle-phase-btn {
-            font-size: 16px; padding: 10px 20px; background: #e74c3c; 
+            font-size: 16px; padding: 12px 24px; background: #e74c3c; 
             color: white; border: none; border-radius: 6px; cursor: pointer; margin-top: 20px;
         }
     </style>
@@ -47,17 +51,15 @@
     <h1>🐺 Wolf & Citizens - Game Arena</h1>
     <div id="phase-title">Current Phase: <span id="phase-name">Day</span></div>
 
-    <!-- DAY VIEW: Circular Player Grid -->
+    <!-- DAY VIEW -->
     <div id="day-view">
-        <div class="circle-arena" id="circle-arena">
-            <!-- Dynamic player icons injected here -->
-        </div>
+        <div class="circle-arena" id="circle-arena"></div>
     </div>
 
-    <!-- NIGHT VIEW: Atmospheric Screen -->
+    <!-- NIGHT VIEW -->
     <div id="night-view">
         <h2>🌙 "The Night whispers..."</h2>
-        <p>Roles are performing their secret actions.</p>
+        <p>Players are performing their secret night actions.</p>
     </div>
 
     <button id="toggle-phase-btn">Switch to Night Phase</button>
@@ -92,40 +94,69 @@
                 renderPlayerCircle(currentPlayers);
             }
         });
-
-        // Render players dynamically in a circle
+// Render players dynamically in a circle with role, connection status, and a Kick button
         function renderPlayerCircle(players) {
             const arena = document.getElementById('circle-arena');
             arena.innerHTML = '';
             
-            const radius = 160; // Distance from center
-            const centerX = 200; // Half of arena width
-            const centerY = 200; // Half of arena height
+            const radius = 180;
+            const centerX = 225;
+            const centerY = 225;
             const total = players.length;
 
+            if (total === 0) return;
+
             players.forEach((player, index) => {
-                // Calculate circular coordinates using trigonometry
                 const angle = (index / total) * 2 * Math.PI;
-                const x = centerX + radius * Math.cos(angle) - 30; // Offset by half icon width
-                const y = centerY + radius * Math.sin(angle) - 30;
+                const x = centerX + radius * Math.cos(angle) - 45;
+                const y = centerY + radius * Math.sin(angle) - 45;
 
                 const div = document.createElement('div');
-                div.className = `player-icon ${player.alive ? '' : 'dead'}`;
+                
+                let cssClass = 'player-icon';
+                if (!player.alive) cssClass += ' dead';
+                if (!player.connected) cssClass += ' disconnected';
+
+                div.className = cssClass;
                 div.style.left = `${x}px`;
                 div.style.top = `${y}px`;
-                div.innerText = `P${index + 1}`;
-                div.title = `Role: ${player.role || 'Unknown'} (${player.alive ? 'Alive' : 'Dead'})`;
+                div.style.width = '90px';
+                div.style.height = '90px';
+                div.style.borderRadius = '50%';
+                div.style.background = '#3498db';
+                div.style.display = 'flex';
+                div.style.flexDirection = 'column';
+                div.style.alignItems = 'center';
+                div.style.justifyContent = 'center';
+                div.style.fontSize = '12px';
+                div.style.boxShadow = '0 4px 10px rgba(0,0,0,0.5)';
+                div.style.position = 'absolute';
+                
+                const roleText = player.role || '...';
+                const statusIndicator = player.connected ? '' : '<span style="font-size:8px; color:#e74c3c;">(Offline)</span>';
+
+                div.innerHTML = `
+                    <span><b>P${index + 1}</b></span>
+                    <span style="font-size:9px; opacity:0.9">${roleText}</span>
+                    ${statusIndicator}
+                    <button onclick="kickPlayer('${player.persistentId}')" style="margin-top:4px; font-size:9px; background:#c0392b; color:white; border:none; padding:2px 6px; border-radius:3px; cursor:pointer;">Kick</button>
+                `;
 
                 arena.appendChild(div);
             });
         }
 
-        // Host button to switch phases
+        // Function for the host to kick a player during the game
+        function kickPlayer(persistentId) {
+            if (confirm("Are you sure you want to kick this player?")) {
+                socket.emit('kick-player', persistentId);
+            }
+        }
+
         document.getElementById('toggle-phase-btn').addEventListener('click', () => {
             socket.emit('toggle-phase');
         });
 
-        // Initial listener for player list updates
         socket.on('update-players', (players) => {
             currentPlayers = players;
             renderPlayerCircle(players);

@@ -4,14 +4,17 @@ const { Server } = require('socket.io');
 const os = require('os');
 const QRCode = require('qrcode');
 
+// Import your modular role actions handler
 const { handlePlayerAction } = require('./roleActions');
 
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
+// Serve static files from the 'public' folder
 app.use(express.static('public'));
 
+// Helper function to find your computer's local IP address on your Wi-Fi/LAN
 function getLocalIP() {
     const interfaces = os.networkInterfaces();
     for (const name of Object.keys(interfaces)) {
@@ -33,6 +36,7 @@ let players = [];
 let hostSocketId = null;
 let currentPhase = 'day'; // Default starting phase
 
+// Route to generate a QR code data URL for the big screen to display
 app.get('/api/qrcode', async (req, res) => {
     try {
         const qrImageURL = await QRCode.toDataURL(controllerURL);
@@ -42,9 +46,11 @@ app.get('/api/qrcode', async (req, res) => {
     }
 });
 
+// Handle real-time socket connections from phones and PC
 io.on('connection', (socket) => {
     console.log(`A device connected: ${socket.id}`);
 
+    // Register browser tab as the Host screen
     socket.on('register-host', () => {
         hostSocketId = socket.id;
         console.log(`Host screen registered: ${socket.id}`);
@@ -52,16 +58,37 @@ io.on('connection', (socket) => {
         socket.emit('phase-changed', { phase: currentPhase, players });
     });
 
-    socket.on('register-player', () => {
-        let player = players.find(p => p.id === socket.id);
-        if (!player) {
-            player = { id: socket.id, role: null, alive: true };
+    // Register or reconnect phone controller using a persistent ID
+    socket.on('register-player', ({ persistentId }) => {
+        let player = players.find(p => p.persistentId === persistentId);
+
+        if (player) {
+            // Player is reconnecting! Update socket ID and mark connected
+            player.id = socket.id;
+            player.connected = true;
+            console.log(`Player reconnected: ${persistentId} (Socket: ${socket.id})`);
+        } else {
+            // Brand new player joining
+            player = {
+                id: socket.id,
+                persistentId: persistentId || socket.id,
+                role: null,
+                alive: true,
+                connected: true
+            };
             players.push(player);
-            console.log(`Player registered: ${socket.id} (Total players: ${players.length})`);
+            console.log(`New player registered: ${socket.id} (Total players: ${players.length})`);
         }
+
         io.emit('update-players', players);
+
+        // If game already started, send them their role immediately upon reconnecting
+        if (player.role) {
+            socket.emit('assigned-role', { role: player.role });
+        }
     });
     
+    // Handle host starting the game with selected roles
     socket.on('start-game', (selectedRoles) => {
         console.log('Host started the game with roles:', selectedRoles);
 
@@ -69,6 +96,7 @@ io.on('connection', (socket) => {
             const assignedRole = selectedRoles[index % selectedRoles.length];
             player.role = assignedRole;
             player.alive = true;
+            
             io.to(player.id).emit('assigned-role', { role: assignedRole });
         });
 
@@ -84,21 +112,36 @@ io.on('connection', (socket) => {
         io.emit('phase-changed', { phase: currentPhase, players });
     });
 
+    // Host manually kicks a player out
+    socket.on('kick-player', (persistentId) => {
+        console.log(`Host kicked player with ID: ${persistentId}`);
+        const playerToKick = players.find(p => p.persistentId === persistentId);
+        if (playerToKick) {
+            io.to(playerToKick.id).emit('kicked');
+        }
+        players = players.filter(p => p.persistentId !== persistentId);
+        io.emit('update-players', players);
+    });
+
+    // Delegate player actions to our modular role actions registry
     socket.on('player-action', (data) => {
         handlePlayerAction(socket, data, io, players);
     });
 
+    // Handle disconnections (mark offline instead of deleting)
     socket.on('disconnect', () => {
         console.log(`Device disconnected: ${socket.id}`);
         
         if (socket.id === hostSocketId) {
+            console.log('Host screen disconnected.');
             hostSocketId = null;
+            return;
         }
 
-        const playerExists = players.some(p => p.id === socket.id);
-        if (playerExists) {
-            players = players.filter(p => p.id !== socket.id);
-            console.log(`Player removed. Total players: ${players.length}`);
+        const player = players.find(p => p.id === socket.id);
+        if (player) {
+            player.connected = false;
+            console.log(`Player went offline: ${player.persistentId}`);
             io.emit('update-players', players);
         }
     });

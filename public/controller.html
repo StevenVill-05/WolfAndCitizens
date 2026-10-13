@@ -38,28 +38,35 @@
             <button id="action-btn">Execute Action</button>
         </div>
     </div>
-    
     <script src="/socket.io/socket.io.js"></script>
     <script>
         const socket = io();
-        socket.emit('register-player');
 
-        // When game starts, show role and default to Day view
+        // Get or create a persistent ID stored in the phone's browser
+        let persistentId = localStorage.getItem('wolf_player_id');
+        if (!persistentId) {
+            persistentId = 'player_' + Math.random().toString(36).substring(2, 9);
+            localStorage.setItem('wolf_player_id', persistentId);
+        }
+
+        // Send registration with the persistent ID
+        socket.emit('register-player', { persistentId });
+
+        // Listen for when the host kicks this player
+        socket.on('kicked', () => {
+            localStorage.removeItem('wolf_player_id');
+            document.body.innerHTML = `<h2 style="color:red; text-align:center; margin-top:50px;">You were kicked by the host.</h2>`;
+        });
+
         socket.on('assigned-role', (data) => {
             document.getElementById('waiting-screen').style.display = 'none';
             document.getElementById('game-container').style.display = 'block';
             document.getElementById('role-display').innerText = data.role;
-            
-            // Start default phase as Day
-            document.getElementById('day-controller').style.display = 'block';
-            document.getElementById('night-controller').style.display = 'none';
         });
 
-        // Listen for phase changes broadcasted by the server
         socket.on('phase-changed', (data) => {
             const dayCtrl = document.getElementById('day-controller');
             const nightCtrl = document.getElementById('night-controller');
-
             if (data.phase === 'night') {
                 dayCtrl.style.display = 'none';
                 nightCtrl.style.display = 'block';
@@ -69,10 +76,8 @@
             }
         });
 
-        // Send role action back to server
         document.getElementById('action-btn').addEventListener('click', () => {
             socket.emit('player-action', { action: 'role-action-triggered', timestamp: Date.now() });
-            alert('Action submitted!');
         });
     </script>
 </body>

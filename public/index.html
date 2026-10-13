@@ -77,8 +77,7 @@
             <button id="start-btn">Start Game</button>
         </div>
     </div>
-
-    <script src="/socket.io/socket.io.js"></script>
+<script src="/socket.io/socket.io.js"></script>
     <script>
         const socket = io();
         socket.emit('register-host');
@@ -97,14 +96,15 @@
             }
         });
 
-        // Listen for player updates
+        // Listen for player updates and connection statuses
         socket.on('update-players', (players) => {
             const listEl = document.getElementById('player-list');
             const countEl = document.getElementById('player-count');
             const startBtn = document.getElementById('start-btn');
             
             listEl.innerHTML = '';
-            countEl.innerText = players.length;
+            // Only count players who are actively connected
+            countEl.innerText = players.filter(p => p.connected).length;
 
             if (players.length === 0) {
                 listEl.innerHTML = '<li>Waiting for players to join...</li>';
@@ -112,12 +112,26 @@
             } else {
                 players.forEach((player, index) => {
                     const li = document.createElement('li');
-                    li.innerText = `Player ${index + 1} (${player.id.substring(0, 5)})`;
+                    const status = player.connected ? '🟢 Connected' : '🔴 Disconnected';
+                    
+                    li.style.display = 'flex';
+                    li.style.justifyContent = 'space-between';
+                    li.style.alignItems = 'center';
+                    
+                    li.innerHTML = `
+                        <span>Player ${index + 1} <br><small style="color:#aaa">${status}</small></span>
+                        <button onclick="kickPlayer('${player.persistentId}')" style="background:#c0392b; color:white; border:none; padding:4px 8px; border-radius:4px; cursor:pointer;">Kick</button>
+                    `;
                     listEl.appendChild(li);
                 });
                 startBtn.style.display = 'block';
             }
         });
+
+        // Function for the host to kick a player out using their persistent ID
+        function kickPlayer(persistentId) {
+            socket.emit('kick-player', persistentId);
+        }
 
         // When host clicks start, collect active preset roles and send to server
         document.getElementById('start-btn').addEventListener('click', () => {
