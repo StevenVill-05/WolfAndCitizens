@@ -6,23 +6,39 @@
     <title>Controller - Wolf & Citizens</title>
     <style>
         body { font-family: Arial, sans-serif; text-align: center; background: #111; color: white; padding-top: 50px; }
-        button { font-size: 20px; padding: 15px 30px; margin-top: 20px; background: #e74c3c; color: white; border: none; border-radius: 8px; cursor: pointer; }
+        #game-controls { display: none; margin-top: 30px; }
+        button { font-size: 20px; padding: 15px 30px; background: #e74c3c; color: white; border: none; border-radius: 8px; cursor: pointer; }
         button:active { background: #c0392b; }
     </style>
 </head>
 <body>
     <h2>Mobile Controller</h2>
-    <p>Connected to Wolf & Citizens Host</p>
-    <button id="action-btn">Perform Action</button>
+    <div id="waiting-screen">
+        <p>Connected to host! Waiting for the game to start...</p>
+    </div>
 
+    <div id="game-controls">
+        <p>You are in the game!</p>
+        <button id="action-btn">Perform Action</button>
+    </div>
+    
     <script src="/socket.io/socket.io.js"></script>
     <script>
         const socket = io();
 
+        // Tell the server this device is a player controller
+        socket.emit('register-player');
+
+        // Listen for when the host clicks start game
+        socket.on('game-started', () => {
+            document.getElementById('waiting-screen').style.display = 'none';
+            document.getElementById('game-controls').style.display = 'block';
+        });
+
         document.getElementById('action-btn').addEventListener('click', () => {
-            // Send a test event to the server when the button is tapped
             socket.emit('player-action', { action: 'button-pressed', timestamp: Date.now() });
         });
     </script>
+
 </body>
 </html>

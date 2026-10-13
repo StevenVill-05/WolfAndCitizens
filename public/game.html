@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Wolf and Citizens - Game Arena</title>
+    <style>
+        body { 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            text-align: center; 
+            background: #121212; 
+            color: #ffffff; 
+            margin: 0; 
+            padding: 50px; 
+        }
+        h1 { color: #2ecc71; }
+        #game-board { margin-top: 30px; background: #1e1e1e; padding: 40px; border-radius: 12px; display: inline-block; min-width: 500px; }
+    </style>
+</head>
+<body>
+
+    <h1>🐺 Wolf & Citizens - Game in Progress</h1>
+    
+    <div id="game-board">
+        <h3>Game Arena</h3>
+        <p>Waiting for player actions from phones...</p>
+        <div id="live-feed">No actions yet.</div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+
+        // Listen for actions sent by the mobile controllers
+        socket.on('game-update', (data) => {
+            document.getElementById('live-feed').innerText = 
+                `Latest Action: ${data.action} from socket ${data.playerId.substring(0, 5)}`;
+        });
+    </script>
+</body>
+</html>

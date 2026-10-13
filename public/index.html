@@ -2,28 +2,64 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Wolf and Citizens - Main Screen</title>
+    <title>Wolf and Citizens - Host Lobby</title>
     <style>
-        body { font-family: Arial, sans-serif; text-align: center; background: #222; color: #fff; margin-top: 50px; }
-        #qrcode { margin: 20px auto; background: white; padding: 15px; display: inline-block; border-radius: 8px; }
+        body { 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            text-align: center; 
+            background: #121212; 
+            color: #ffffff; 
+            margin: 0; 
+            padding: 40px; 
+        }
+        h1 { color: #e74c3c; margin-bottom: 5px; }
+        .container { display: flex; justify-content: center; gap: 40px; margin-top: 30px; align-items: flex-start; }
+        .panel { background: #1e1e1e; padding: 25px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); width: 350px; }
+        #qrcode { background: white; padding: 15px; display: inline-block; border-radius: 8px; margin-top: 15px; }
         #qrcode img { display: block; }
+        #player-list { list-style: none; padding: 0; text-align: left; max-height: 200px; overflow-y: auto; }
+        #player-list li { background: #2c2c2c; padding: 10px; margin-bottom: 8px; border-radius: 6px; }
+        #start-btn { 
+            margin-top: 20px; font-size: 18px; padding: 12px 24px; 
+            background: #2ecc71; color: white; border: none; 
+            border-radius: 6px; cursor: pointer; display: none; width: 100%;
+        }
+        #start-btn:hover { background: #27ae60; }
+        .url-display { font-size: 14px; color: #aaa; word-break: break-all; margin-top: 10px; }
     </style>
 </head>
 <body>
-    <h1>Wolf and Citizens</h1>
-    <p>Scan this QR code with your phone to join as a player!</p>
-    
-    <div id="qrcode">
-        <img id="qr-img" alt="Scan to play" />
-    </div>
-    <p id="url-text"></p>
 
-    <!-- Socket.io client script -->
-    <script src="/socket.io/socket.io.js"></script>
+    <h1>🐺 Wolf & Citizens</h1>
+    <p>Host Lobby</p>
+
+    <div class="container">
+        <!-- QR Code Panel -->
+        <div class="panel">
+            <h3>Join Game</h3>
+            <p>Scan with your phone camera:</p>
+            <div id="qrcode">
+                <img id="qr-img" alt="Scan to play" />
+            </div>
+            <div class="url-display" id="url-text">Loading URL...</div>
+        </div>
+
+        <!-- Lobby Players Panel -->
+        <div class="panel">
+            <h3>Connected Players (<span id="player-count">0</span>)</h3>
+            <ul id="player-list">
+                <li>Waiting for players to join...</li>
+            </ul>
+            <button id="start-btn">Start Game</button>
+        </div>
+    </div>
+<script src="/socket.io/socket.io.js"></script>
     <script>
         const socket = io();
 
-        // Fetch the local network QR code from our server
+        // Tell the server this browser is the host
+        socket.emit('register-host');
+
         fetch('/api/qrcode')
             .then(res => res.json())
             .then(data => {
@@ -31,10 +67,34 @@
                 document.getElementById('url-text').innerText = data.controllerURL;
             });
 
-        // Listen for actions broadcasted by connected phones
-        socket.on('game-update', (data) => {
-            console.log("Game update received:", data);
+        // Listen for player updates from server
+        socket.on('update-players', (players) => {
+            console.log("Received players update:", players);
+            const listEl = document.getElementById('player-list');
+            const countEl = document.getElementById('player-count');
+            const startBtn = document.getElementById('start-btn');
+            
+            listEl.innerHTML = '';
+            countEl.innerText = players.length;
+
+            if (players.length === 0) {
+                listEl.innerHTML = '<li>Waiting for players to join...</li>';
+                startBtn.style.display = 'none';
+            } else {
+                players.forEach((player, index) => {
+                    const li = document.createElement('li');
+                    li.innerText = `Player ${index + 1} (${player.id.substring(0, 5)})`;
+                    listEl.appendChild(li);
+                });
+                startBtn.style.display = 'block';
+            }
+        });
+
+        document.getElementById('start-btn').addEventListener('click', () => {
+            socket.emit('start-game');
+            window.location.href = '/game.html';
         });
     </script>
+
 </body>
 </html>
