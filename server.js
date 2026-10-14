@@ -137,6 +137,43 @@ io.on('connection', (socket) => {
         handlePlayerAction(socket, data, io, players);
     });
 
+    // Wolf Den Chat handler
+    socket.on('wolf-chat-message', (message) => {
+        const sender = players.find(p => p.id === socket.id);
+        if (sender && sender.alive && (sender.role === 'Wolf' || sender.role === 'GrandWolf')) {
+            const senderIndex = players.indexOf(sender) + 1;
+            
+            // Broadcast only to living Wolves and Grand Wolves
+            players.forEach(p => {
+                if (p.alive && (p.role === 'Wolf' || p.role === 'GrandWolf') && p.id) {
+                    io.to(p.id).emit('incoming-wolf-message', {
+                        sender: `P${senderIndex} (${sender.role})`,
+                        message: message
+                    });
+                }
+            });
+        }
+    });
+
+    // Broadcast wolf vote updates to all wolves in real-time
+    socket.on('wolf-vote-cast', ({ targetId }) => {
+        const voter = players.find(p => p.id === socket.id);
+        if (voter && voter.alive && (voter.role === 'Wolf' || voter.role === 'GrandWolf')) {
+            const voterIndex = players.indexOf(voter) + 1;
+            const targetIndex = players.findIndex(p => p.persistentId === targetId) + 1;
+
+            players.forEach(p => {
+                if (p.alive && (p.role === 'Wolf' || p.role === 'GrandWolf') && p.id) {
+                    io.to(p.id).emit('wolf-vote-updated', {
+                        voterIndex: voterIndex,
+                        targetIndex: targetIndex,
+                        targetId: targetId
+                    });
+                }
+            });
+        }
+    });
+
     // Handle ghost chat messages from eliminated players
     socket.on('ghost-chat-message', (message) => {
         const sender = players.find(p => p.id === socket.id);
@@ -172,6 +209,8 @@ io.on('connection', (socket) => {
             io.emit('update-players', players);
         }
     });
+
+
 });
 
 server.listen(PORT, () => {

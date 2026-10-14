@@ -106,6 +106,17 @@
                 <!-- Dynamic target buttons injected here -->
             </div>
             <button id="action-btn" style="display:none; background: #8e44ad; border-color: #d4af37;">Confirm Dark Decree</button>
+
+            <!-- WOLF DEN CHAT & VOTES PANEL (Nested inside Night Controller) -->
+            <div id="wolf-pack-panel" style="display:none; margin-top:15px; background: #1c1012; border: 1px solid #b22222; padding: 10px; border-radius: 4px;">
+                <h4 style="color: #e74c3c; margin: 0 0 8px 0; font-family: 'Cinzel', serif;">🐺 Wolf Den Whispers</h4>
+                <div id="wolf-chat-box" style="height: 100px; overflow-y: auto; background: #110b0c; border: 1px solid #444; padding: 5px; font-size: 11px; text-align: left; margin-bottom: 8px;"></div>
+                <div style="display:flex; gap:4px;">
+                    <input type="text" id="wolf-chat-input" placeholder="Whisper to pack..." style="flex:1; padding:6px; background:#222; color:#fff; border:1px solid #555; border-radius:3px; font-size:11px;">
+                    <button id="wolf-chat-send" style="width:65px; margin-top:0; padding:6px; font-size:11px; background:#b22222;">Send</button>
+                </div>
+                <div id="wolf-votes-summary" style="margin-top:8px; font-size:11px; color:#d4af37; text-align:left;"></div>
+            </div>
         </div>
     </div>
 
@@ -135,38 +146,52 @@
             localStorage.setItem('wolf_player_id', persistentId);
         }
 
-        // Send registration with the persistent ID
+        // Send registration with persistent ID
         socket.emit('register-player', { persistentId });
 
         let selectedTargetId = null;
+        let myRole = null;
 
-        // Listen for when the host kicks this player
+        // Listen for host kicking this player
         socket.on('kicked', () => {
             localStorage.removeItem('wolf_player_id');
             document.body.innerHTML = `<h2 style="color:#a93226; text-align:center; margin-top:50px; font-family:'Cinzel',serif;">You have been banished from the council.</h2>`;
         });
 
+        // Assigned Role handling
         socket.on('assigned-role', (data) => {
+            myRole = data.role;
             document.getElementById('waiting-screen').style.display = 'none';
             document.getElementById('game-container').style.display = 'block';
             document.querySelectorAll('#role-display').forEach(el => el.innerText = data.role);
         });
 
+        // Phase Changed Handling
         socket.on('phase-changed', (data) => {
             const dayCtrl = document.getElementById('day-controller');
             const nightCtrl = document.getElementById('night-controller');
+            const wolfPanel = document.getElementById('wolf-pack-panel');
+
             if (data.phase === 'night') {
                 dayCtrl.style.display = 'none';
                 nightCtrl.style.display = 'block';
+
+                // Display Wolf Den Chat if assigned Wolf or GrandWolf
+                if (myRole === 'Wolf' || myRole === 'GrandWolf') {
+                    wolfPanel.style.display = 'block';
+                } else {
+                    wolfPanel.style.display = 'none';
+                }
             } else {
                 dayCtrl.style.display = 'block';
                 nightCtrl.style.display = 'none';
+                wolfPanel.style.display = 'none';
                 selectedTargetId = null;
                 document.getElementById('action-btn').style.display = 'none';
             }
         });
 
-        // Listen for player updates to populate the night target list
+        // Listen for player updates to populate target selection buttons
         socket.on('update-players', (players) => {
             const targetListEl = document.getElementById('target-list');
             targetListEl.innerHTML = '';
@@ -186,15 +211,52 @@
             });
         });
 
-        // Submit action with target persistent ID
+        // Confirm action decree
         document.getElementById('action-btn').addEventListener('click', () => {
             if (!selectedTargetId) {
                 alert('You must select a target soul first!');
                 return;
             }
             socket.emit('player-action', { targetId: selectedTargetId });
+
+            // If wolf or grand wolf, broadcast vote to fellow pack members
+            if (myRole === 'Wolf' || myRole === 'GrandWolf') {
+                socket.emit('wolf-vote-cast', { targetId: selectedTargetId });
+            }
+
             alert('Your decree has been locked in shadow.');
             document.getElementById('action-btn').style.display = 'none';
+        });
+
+        // Wolf Den Chat listeners
+        document.getElementById('wolf-chat-send').addEventListener('click', sendWolfMessage);
+        document.getElementById('wolf-chat-input').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') sendWolfMessage();
+        });
+
+        function sendWolfMessage() {
+            const input = document.getElementById('wolf-chat-input');
+            const msg = input.value.trim();
+            if (msg) {
+                socket.emit('wolf-chat-message', msg);
+                input.value = '';
+            }
+        }
+
+        socket.on('incoming-wolf-message', (data) => {
+            const box = document.getElementById('wolf-chat-box');
+            const div = document.createElement('div');
+            div.style.margin = '2px 0';
+            div.innerHTML = `<b style="color:#e74c3c;">${data.sender}:</b> ${data.message}`;
+            box.appendChild(div);
+            box.scrollTop = box.scrollHeight;
+        });
+
+        socket.on('wolf-vote-updated', (data) => {
+            const summary = document.getElementById('wolf-votes-summary');
+            const item = document.createElement('div');
+            item.innerText = `P${data.voterIndex} voted to strike Seat ${data.targetIndex}`;
+            summary.appendChild(item);
         });
 
         // Listen for Seer / Oracle vision results
