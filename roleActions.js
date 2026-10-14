@@ -10,35 +10,43 @@ const roleActions = {
     Doctor: doctor
 };
 
-// Queue to hold actions submitted during the night
 let nightActionQueue = [];
 
 function handlePlayerAction(socket, data, io, players) {
     const player = players.find(p => p.id === socket.id);
-    if (!player || !player.alive) return; // Dead players can't act
+    if (!player) {
+        console.log(`[ACTION ERROR] Player not found for socket: ${socket.id}`);
+        return;
+    }
+    if (!player.alive) {
+        console.log(`[ACTION IGNORED] Dead player tried to act: ${player.persistentId}`);
+        return;
+    }
 
     const role = player.role;
+    console.log(`[HANDLE ACTION] Player role: ${role}`);
+
     if (roleActions[role]) {
         roleActions[role](socket, data, io, players, nightActionQueue);
     } else {
-        console.log(`No action handler defined for role: ${role}`);
+        console.log(`[ACTION ERROR] No action handler defined for role: ${role}`);
     }
 }
+
 function resolveNightActions(io, players) {
-    // Sort actions by priority: lowest number comes first (1 -> Wolf, 2 -> Doctor, 3 -> Seer)
+    console.log(`\n--- RESOLVING NIGHT ACTIONS ---`);
     nightActionQueue.sort((a, b) => a.priority - b.priority);
 
     let savedTargetId = null;
     let killedTargetId = null;
     let resultLog = "Night Results: ";
 
-    // Execute actions in strict priority order
     nightActionQueue.forEach(action => {
         if (action.role === 'Wolf') {
-            killedTargetId = action.targetId; // This is now persistentId
+            killedTargetId = action.targetId;
         } 
         else if (action.role === 'Doctor') {
-            savedTargetId = action.targetId; // This is now persistentId
+            savedTargetId = action.targetId;
         } 
         else if (action.role === 'Seer') {
             const seerSocket = action.actorId;
@@ -51,26 +59,35 @@ function resolveNightActions(io, players) {
         }
     });
 
-    // Finalize life/death outcomes using persistentId lookup
     if (killedTargetId) {
         if (killedTargetId === savedTargetId) {
-            resultLog += `The attack on the target was successfully saved by the Doctor! `;
+            resultLog += `The attack was successfully saved by the Apothecary! `;
+            console.log(`[RESULT] Victim saved by doctor.`);
         } else {
             const victim = players.find(p => p.persistentId === killedTargetId);
             if (victim) {
                 victim.alive = false;
-                resultLog += `Player was eliminated during the night. `;
+                resultLog += `Tragedy befell the village. A cold body was found in the square at dawn. `;
+                console.log(`[RESULT] Victim killed: ${victim.persistentId} (alive = ${victim.alive})`);
+                
+                // Transfer victim to the ghost page on their controller
+                if (victim.id) {
+                    io.to(victim.id).emit('player-eliminated');
+                }
+            } else {
+                console.log(`[RESULT ERROR] Could not find victim with persistentId: ${killedTargetId}`);
             }
         }
     } else {
         resultLog += `It was a quiet night. No attacks were made. `;
+        console.log(`[RESULT] No wolf target submitted.`);
     }
 
-    // Clear queue for the next night cycle
     nightActionQueue = [];
 
     io.emit('game-log', { message: resultLog });
     io.emit('update-players', players);
+    console.log(`-------------------------------\n`);
 }
 
 module.exports = { handlePlayerAction, resolveNightActions };

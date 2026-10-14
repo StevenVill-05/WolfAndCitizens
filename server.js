@@ -82,6 +82,10 @@ io.on('connection', (socket) => {
 
         if (player.role) {
             socket.emit('assigned-role', { role: player.role });
+            // If they reconnect after already being dead, send them back to the ghost realm
+            if (!player.alive) {
+                socket.emit('player-eliminated');
+            }
         }
     });
     
@@ -131,6 +135,24 @@ io.on('connection', (socket) => {
     // Delegate player actions to our modular role actions registry
     socket.on('player-action', (data) => {
         handlePlayerAction(socket, data, io, players);
+    });
+
+    // Handle ghost chat messages from eliminated players
+    socket.on('ghost-chat-message', (message) => {
+        const sender = players.find(p => p.id === socket.id);
+        if (sender && !sender.alive) {
+            const playerIndex = players.indexOf(sender) + 1;
+            
+            // Broadcast message only to connected players who are dead (!alive)
+            players.forEach(p => {
+                if (!p.alive && p.id) {
+                    io.to(p.id).emit('incoming-ghost-message', {
+                        name: `Spirit P${playerIndex}`,
+                        message: message
+                    });
+                }
+            });
+        }
     });
 
     // Handle disconnections (mark offline instead of deleting)

@@ -109,6 +109,21 @@
         </div>
     </div>
 
+    <!-- GHOST / AFTERLIFE SCREEN -->
+    <div id="ghost-screen" class="screen" style="display:none; border-color: #444; background: #121014;">
+        <h2 style="color: #9b59b6; font-family: 'Cinzel', serif;">👻 The Spirit Realm</h2>
+        <p style="font-size: 13px; color: #aaa;">You have fallen in the council. Watch from the shadows and converse with fellow spirits.</p>
+        
+        <!-- Ghost Chat Box -->
+        <div id="ghost-chat-box" style="background: #1a161f; border: 1px solid #333; height: 160px; overflow-y: auto; padding: 10px; margin-bottom: 10px; text-align: left; font-size: 12px; border-radius: 4px;">
+            <!-- Messages injected here -->
+        </div>
+        <div style="display: flex; gap: 5px;">
+            <input type="text" id="ghost-input" placeholder="Whisper from beyond..." style="flex: 1; padding: 8px; background: #222; border: 1px solid #444; color: #fff; border-radius: 4px;">
+            <button id="ghost-send-btn" style="margin-top:0; width: 80px; background: #6c5ce7;">Send</button>
+        </div>
+    </div>
+
     <script src="/socket.io/socket.io.js"></script>
     <script>
         const socket = io();
@@ -185,6 +200,37 @@
         // Listen for Seer / Oracle vision results
         socket.on('seer-result', (data) => {
             alert(data.message);
+        });
+
+        // Listen for when this player dies / is eliminated
+        socket.on('player-eliminated', () => {
+            document.getElementById('waiting-screen').style.display = 'none';
+            document.getElementById('game-container').style.display = 'none';
+            document.getElementById('ghost-screen').style.display = 'block';
+        });
+
+        // Ghost chat handling
+        document.getElementById('ghost-send-btn').addEventListener('click', sendGhostMessage);
+        document.getElementById('ghost-input').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') sendGhostMessage();
+        });
+
+        function sendGhostMessage() {
+            const input = document.getElementById('ghost-input');
+            const message = input.value.trim();
+            if (message) {
+                socket.emit('ghost-chat-message', message);
+                input.value = '';
+            }
+        }
+
+        socket.on('incoming-ghost-message', (data) => {
+            const chatBox = document.getElementById('ghost-chat-box');
+            const p = document.createElement('div');
+            p.style.margin = '4px 0';
+            p.innerHTML = `<span style="color: #a29bfe; font-weight: bold;">${data.name}:</span> ${data.message}`;
+            chatBox.appendChild(p);
+            chatBox.scrollTop = chatBox.scrollHeight;
         });
     </script>
 </body>
