@@ -173,12 +173,11 @@
                 div.style.left = `${x}px`;
                 div.style.top = `${y}px`;
                 
-                const roleText = player.role || '...';
+                const displayName = player.username || `P${index + 1}`;
                 const statusIndicator = player.connected ? '' : '<span style="font-size:8px; color:#e74c3c;">(Offline)</span>';
 
                 div.innerHTML = `
-                    <span><b>P${index + 1}</b></span>
-                    <span style="font-size:9px; opacity:0.9">${roleText}</span>
+                    <span style="font-weight: bold; overflow: hidden; text-overflow: ellipsis; max-width: 80px; white-space: nowrap;">${displayName}</span>
                     ${statusIndicator}
                     <button onclick="kickPlayer('${player.persistentId}')" style="margin-top:2px; font-size:8px; background:#b22222; color:white; border:1px solid #d4af37; padding:1px 4px; border-radius:2px; cursor:pointer;">Banish</button>
                 `;

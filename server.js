@@ -58,34 +58,60 @@ io.on('connection', (socket) => {
         socket.emit('phase-changed', { phase: currentPhase, players });
     });
 
-    // Register or reconnect phone controller using a persistent ID
-    socket.on('register-player', ({ persistentId }) => {
+    // Register or reconnect phone controller using a persistent ID & Unique Username
+    socket.on('register-player', ({ persistentId, username }, callback) => {
         let player = players.find(p => p.persistentId === persistentId);
 
         if (player) {
+            // Reconnecting player
             player.id = socket.id;
             player.connected = true;
-            console.log(`Player reconnected: ${persistentId} (Socket: ${socket.id})`);
+            // Allow updating username if provided
+            if (username && username.trim() !== '') {
+                player.username = username.trim();
+            }
+            console.log(`Player reconnected: ${player.username} (${persistentId})`);
+            
+            if (callback) callback({ success: true, username: player.username });
         } else {
+            // New player registration - check for unique username
+            const trimmedName = (username || '').trim();
+            if (!trimmedName) {
+                if (callback) callback({ success: false, error: 'Username cannot be empty.' });
+                return;
+            }
+
+            const nameExists = players.some(
+                p => p.username && p.username.toLowerCase() === trimmedName.toLowerCase()
+            );
+
+            if (nameExists) {
+                if (callback) callback({ success: false, error: 'Username is already taken by another player!' });
+                return;
+            }
+
             player = {
                 id: socket.id,
                 persistentId: persistentId || socket.id,
+                username: trimmedName,
                 role: null,
                 alive: true,
                 connected: true
             };
             players.push(player);
-            console.log(`New player registered: ${socket.id} (Total players: ${players.length})`);
+            console.log(`New player joined: ${player.username} (Total: ${players.length})`);
+
+            if (callback) callback({ success: true, username: player.username });
         }
 
         io.emit('update-players', players);
 
         if (player.role) {
             socket.emit('assigned-role', { role: player.role });
-            // If they reconnect after already being dead, send them back to the ghost realm
-            if (!player.alive) {
-                socket.emit('player-eliminated');
-            }
+        }
+
+        if (!player.alive) {
+            socket.emit('player-eliminated');
         }
     });
     
@@ -137,54 +163,43 @@ io.on('connection', (socket) => {
         handlePlayerAction(socket, data, io, players);
     });
 
-    // Wolf Den Chat handler
+// Wolf Chat using Username
     socket.on('wolf-chat-message', (message) => {
         const sender = players.find(p => p.id === socket.id);
         if (sender && sender.alive && (sender.role === 'Wolf' || sender.role === 'GrandWolf')) {
-            const senderIndex = players.indexOf(sender) + 1;
-            
-            // Broadcast only to living Wolves and Grand Wolves
             players.forEach(p => {
                 if (p.alive && (p.role === 'Wolf' || p.role === 'GrandWolf') && p.id) {
                     io.to(p.id).emit('incoming-wolf-message', {
-                        sender: `P${senderIndex} (${sender.role})`,
+                        sender: `${sender.username} (${sender.role})`,
                         message: message
                     });
                 }
             });
         }
     });
-
-    // Broadcast wolf vote updates to all wolves in real-time
+// Wolf Vote Notification using Username
     socket.on('wolf-vote-cast', ({ targetId }) => {
         const voter = players.find(p => p.id === socket.id);
-        if (voter && voter.alive && (voter.role === 'Wolf' || voter.role === 'GrandWolf')) {
-            const voterIndex = players.indexOf(voter) + 1;
-            const targetIndex = players.findIndex(p => p.persistentId === targetId) + 1;
-
+        const target = players.find(p => p.persistentId === targetId);
+        if (voter && target && voter.alive && (voter.role === 'Wolf' || voter.role === 'GrandWolf')) {
             players.forEach(p => {
                 if (p.alive && (p.role === 'Wolf' || p.role === 'GrandWolf') && p.id) {
                     io.to(p.id).emit('wolf-vote-updated', {
-                        voterIndex: voterIndex,
-                        targetIndex: targetIndex,
-                        targetId: targetId
+                        voterName: voter.username,
+                        targetName: target.username
                     });
                 }
             });
         }
     });
-
-    // Handle ghost chat messages from eliminated players
+// Ghost Chat using Username
     socket.on('ghost-chat-message', (message) => {
         const sender = players.find(p => p.id === socket.id);
         if (sender && !sender.alive) {
-            const playerIndex = players.indexOf(sender) + 1;
-            
-            // Broadcast message only to connected players who are dead (!alive)
             players.forEach(p => {
                 if (!p.alive && p.id) {
                     io.to(p.id).emit('incoming-ghost-message', {
-                        name: `Spirit P${playerIndex}`,
+                        name: sender.username || 'Spirit',
                         message: message
                     });
                 }

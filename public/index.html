@@ -111,16 +111,17 @@
                 listEl.innerHTML = '<li>Waiting for players to join...</li>';
                 startBtn.style.display = 'none';
             } else {
-                players.forEach((player, index) => {
+                players.forEach((player) => {
                     const li = document.createElement('li');
                     const status = player.connected ? '🟢 Connected' : '🔴 Disconnected';
+                    const name = player.username || 'Connecting...';
                     
                     li.style.display = 'flex';
                     li.style.justifyContent = 'space-between';
                     li.style.alignItems = 'center';
                     
                     li.innerHTML = `
-                        <span>Player ${index + 1} <br><small style="color:#aaa">${status}</small></span>
+                        <span><b>${name}</b> <br><small style="color:#aaa">${status}</small></span>
                         <button onclick="kickPlayer('${player.persistentId}')" style="background:#c0392b; color:white; border:none; padding:4px 8px; border-radius:4px; cursor:pointer;">Kick</button>
                     `;
                     listEl.appendChild(li);

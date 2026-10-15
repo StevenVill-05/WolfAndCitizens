@@ -34,7 +34,7 @@
             box-shadow: 0 4px 15px rgba(0,0,0,0.8);
         }
 
-        #waiting-screen { display: block; } /* Default active screen */
+        #join-screen { display: block; } /* Default active screen for username entry */
 
         /* Gothic Buttons */
         button {
@@ -82,6 +82,15 @@
     </style>
 </head>
 <body>
+
+    <!-- USERNAME ENTRY SCREEN -->
+    <div id="join-screen" class="screen">
+        <h2>Enter The Council</h2>
+        <p style="font-size: 13px;">Choose a unique title or name to identify your soul in the village:</p>
+        <input type="text" id="username-input" placeholder="Enter your username..." style="width: 90%; padding: 10px; background: #222; border: 1px solid #d4af37; color: #fff; border-radius: 4px; font-family: 'Georgia', serif; text-align: center; font-size: 16px;">
+        <div id="join-error" style="color: #e74c3c; font-size: 12px; margin-top: 8px;"></div>
+        <button id="join-btn" style="margin-top: 15px;">Join Council</button>
+    </div>
 
     <!-- WAITING SCREEN -->
     <div id="waiting-screen" class="screen">
@@ -146,21 +155,49 @@
             localStorage.setItem('wolf_player_id', persistentId);
         }
 
-        // Send registration with persistent ID
-        socket.emit('register-player', { persistentId });
+        let myUsername = localStorage.getItem('wolf_username');
+        if (myUsername) {
+            document.getElementById('username-input').value = myUsername;
+        }
 
         let selectedTargetId = null;
         let myRole = null;
 
+        // Handle joining with unique username
+        document.getElementById('join-btn').addEventListener('click', () => {
+            const username = document.getElementById('username-input').value.trim();
+            const errorEl = document.getElementById('join-error');
+            errorEl.innerText = '';
+
+            if (!username) {
+                errorEl.innerText = 'Please enter a valid username!';
+                return;
+            }
+
+            socket.emit('register-player', { persistentId, username }, (response) => {
+                if (response.success) {
+                    myUsername = response.username;
+                    localStorage.setItem('wolf_username', myUsername);
+                    
+                    document.getElementById('join-screen').style.display = 'none';
+                    document.getElementById('waiting-screen').style.display = 'block';
+                } else {
+                    errorEl.innerText = response.error;
+                }
+            });
+        });
+
         // Listen for host kicking this player
         socket.on('kicked', () => {
             localStorage.removeItem('wolf_player_id');
+            localStorage.removeItem('wolf_username');
             document.body.innerHTML = `<h2 style="color:#a93226; text-align:center; margin-top:50px; font-family:'Cinzel',serif;">You have been banished from the council.</h2>`;
         });
 
         // Assigned Role handling
         socket.on('assigned-role', (data) => {
             myRole = data.role;
+            document.getElementById('join-screen').style.display = 'none';
             document.getElementById('waiting-screen').style.display = 'none';
             document.getElementById('game-container').style.display = 'block';
             document.querySelectorAll('#role-display').forEach(el => el.innerText = data.role);
@@ -176,7 +213,6 @@
                 dayCtrl.style.display = 'none';
                 nightCtrl.style.display = 'block';
 
-                // Display Wolf Den Chat if assigned Wolf or GrandWolf
                 if (myRole === 'Wolf' || myRole === 'GrandWolf') {
                     wolfPanel.style.display = 'block';
                 } else {
@@ -191,15 +227,15 @@
             }
         });
 
-        // Listen for player updates to populate target selection buttons
+        // Listen for player updates to populate target selection buttons using usernames
         socket.on('update-players', (players) => {
             const targetListEl = document.getElementById('target-list');
             targetListEl.innerHTML = '';
             
-            players.forEach((player, index) => {
-                if (player.alive) {
+            players.forEach((player) => {
+                if (player.alive && player.persistentId !== persistentId) {
                     const btn = document.createElement('button');
-                    btn.innerText = `Seat ${index + 1}`;
+                    btn.innerText = player.username || 'Unknown Soul';
                     btn.onclick = () => {
                         document.querySelectorAll('#target-list button').forEach(b => b.style.background = '#231c18');
                         btn.style.background = '#5c4033';
@@ -219,7 +255,6 @@
             }
             socket.emit('player-action', { targetId: selectedTargetId });
 
-            // If wolf or grand wolf, broadcast vote to fellow pack members
             if (myRole === 'Wolf' || myRole === 'GrandWolf') {
                 socket.emit('wolf-vote-cast', { targetId: selectedTargetId });
             }
@@ -255,7 +290,7 @@
         socket.on('wolf-vote-updated', (data) => {
             const summary = document.getElementById('wolf-votes-summary');
             const item = document.createElement('div');
-            item.innerText = `P${data.voterIndex} voted to strike Seat ${data.targetIndex}`;
+            item.innerText = `${data.voterName} voted to strike ${data.targetName}`;
             summary.appendChild(item);
         });
 
@@ -266,6 +301,7 @@
 
         // Listen for when this player dies / is eliminated
         socket.on('player-eliminated', () => {
+            document.getElementById('join-screen').style.display = 'none';
             document.getElementById('waiting-screen').style.display = 'none';
             document.getElementById('game-container').style.display = 'none';
             document.getElementById('ghost-screen').style.display = 'block';
