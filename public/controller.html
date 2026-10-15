@@ -144,11 +144,22 @@
         </div>
     </div>
 
+    <!-- PERSONAL HISTORY PANEL -->
+    <div style="margin-top: 15px; border-top: 1px solid #5c4033; padding-top: 10px;">
+        <button id="toggle-history-btn" style="background: #3d2817; border-color: #d4af37; font-size: 12px; padding: 8px;">📜 View Personal Chronicles</button>
+        
+        <div id="history-modal" style="display:none; background: #120e0d; border: 1px solid #d4af37; padding: 10px; margin-top: 8px; border-radius: 4px; max-height: 140px; overflow-y: auto; text-align: left;">
+            <h4 style="color: #d4af37; margin: 0 0 6px 0; font-family: 'Cinzel', serif; font-size: 13px;">Your Past Actions</h4>
+            <div id="history-list" style="font-size: 11px; color: #d8cca6;">
+                <p style="font-style: italic; color: #888;">No actions recorded yet...</p>
+            </div>
+        </div>
+    </div>
+
     <script src="/socket.io/socket.io.js"></script>
     <script>
         const socket = io();
 
-        // Get or create a persistent ID stored in the phone's browser
         let persistentId = localStorage.getItem('wolf_player_id');
         if (!persistentId) {
             persistentId = 'player_' + Math.random().toString(36).substring(2, 9);
@@ -162,6 +173,7 @@
 
         let selectedTargetId = null;
         let myRole = null;
+        let cachedPlayers = [];
 
         // Handle joining with unique username
         document.getElementById('join-btn').addEventListener('click', () => {
@@ -209,6 +221,10 @@
             const nightCtrl = document.getElementById('night-controller');
             const wolfPanel = document.getElementById('wolf-pack-panel');
 
+            if (data.players) {
+                cachedPlayers = data.players;
+            }
+
             if (data.phase === 'night') {
                 dayCtrl.style.display = 'none';
                 nightCtrl.style.display = 'block';
@@ -218,6 +234,7 @@
                 } else {
                     wolfPanel.style.display = 'none';
                 }
+                renderTargetList();
             } else {
                 dayCtrl.style.display = 'block';
                 nightCtrl.style.display = 'none';
@@ -227,12 +244,27 @@
             }
         });
 
-        // Listen for player updates to populate target selection buttons using usernames
-        socket.on('update-players', (players) => {
+        // Toggle history modal
+        document.getElementById('toggle-history-btn').addEventListener('click', () => {
+            const modal = document.getElementById('history-modal');
+            modal.style.display = modal.style.display === 'none' ? 'block' : 'none';
+        });
+
+        // Reusable function to render target lists
+        function renderTargetList() {
             const targetListEl = document.getElementById('target-list');
-            targetListEl.innerHTML = '';
+            if (!targetListEl) return;
             
-            players.forEach((player) => {
+            targetListEl.innerHTML = '';
+            selectedTargetId = null;
+            document.getElementById('action-btn').style.display = 'none';
+
+            if (!cachedPlayers || cachedPlayers.length === 0) {
+                targetListEl.innerHTML = '<p style="font-size:12px; color:#888;">No active targets found...</p>';
+                return;
+            }
+
+            cachedPlayers.forEach((player) => {
                 if (player.alive && player.persistentId !== persistentId) {
                     const btn = document.createElement('button');
                     btn.innerText = player.username || 'Unknown Soul';
@@ -245,6 +277,34 @@
                     targetListEl.appendChild(btn);
                 }
             });
+        }
+
+        // Listen for player updates
+        socket.on('update-players', (players) => {
+            cachedPlayers = players;
+            renderTargetList();
+
+            const me = players.find(p => p.persistentId === persistentId);
+            if (me && me.history) {
+                const historyList = document.getElementById('history-list');
+                if (historyList) {
+                    historyList.innerHTML = '';
+
+                    if (me.history.length === 0) {
+                        historyList.innerHTML = '<p style="font-style: italic; color: #888;">No actions recorded yet...</p>';
+                        return;
+                    }
+
+                    me.history.forEach((record, index) => {
+                        const div = document.createElement('div');
+                        div.style.marginBottom = '6px';
+                        div.style.borderBottom = '1px dashed #333';
+                        div.style.paddingBottom = '4px';
+                        div.innerHTML = `<b>#${index + 1} [${record.phase}]</b>: ${record.action}<br><span style="color: #d4af37;">Outcome: ${record.result}</span>`;
+                        historyList.appendChild(div);
+                    });
+                }
+            }
         });
 
         // Confirm action decree

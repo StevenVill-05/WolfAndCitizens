@@ -99,14 +99,15 @@ io.on('connection', (socket) => {
                 if (callback) callback({ success: false, error: 'Username is already taken by another player!' });
                 return;
             }
-
+            
             player = {
                 id: socket.id,
                 persistentId: persistentId || socket.id,
                 username: trimmedName,
                 role: null,
                 alive: true,
-                connected: true
+                connected: true,
+                history: [] // Initialize history log
             };
             players.push(player);
             console.log(`New player joined: ${player.username} (Total: ${players.length})`);

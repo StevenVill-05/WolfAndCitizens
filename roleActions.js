@@ -19,6 +19,8 @@ function handlePlayerAction(socket, data, io, players) {
     const player = players.find(p => p.id === socket.id);
     if (!player || !player.alive) return;
 
+    if (!player.history) player.history = [];
+
     const role = player.role;
     if (roleActions[role]) {
         roleActions[role](socket, data, io, players, nightActionQueue);
@@ -65,19 +67,40 @@ function resolveNightActions(io, players) {
     const wolfVotes = {};
     
     nightActionQueue.forEach(action => {
-        if (action.role === 'Wolf' || action.role === 'GrandWolf') {
-            if (action.targetId) {
-                wolfVotes[action.targetId] = (wolfVotes[action.targetId] || 0) + 1;
-            }
-        } else if (action.role === 'Doctor') {
-            savedTargetId = action.targetId;
-        } else if (action.role === 'Seer') {
-            const seerSocket = action.actorId;
+        const actor = players.find(p => p.id === action.actorId);
+        if (actor) {
+            if (!actor.history) actor.history = [];
             const target = players.find(p => p.persistentId === action.targetId);
-            if (target) {
-                io.to(seerSocket).emit('seer-result', { 
-                    message: `Oracle vision: Target is a ${target.role}` 
+            const targetName = target ? target.username : 'Someone';
+
+            if (action.role === 'Wolf' || action.role === 'GrandWolf') {
+                if (action.targetId) {
+                    wolfVotes[action.targetId] = (wolfVotes[action.targetId] || 0) + 1;
+                    actor.history.push({
+                        phase: 'Night',
+                        action: `Voted to strike ${targetName}`,
+                        result: 'Submitted decree to the pack.'
+                    });
+                }
+            } else if (action.role === 'Doctor') {
+                savedTargetId = action.targetId;
+                actor.history.push({
+                    phase: 'Night',
+                    action: `Attempted to heal ${targetName}`,
+                    result: 'Healing potion administered.'
                 });
+            } else if (action.role === 'Seer') {
+                const seerSocket = action.actorId;
+                if (target) {
+                    io.to(seerSocket).emit('seer-result', { 
+                        message: `Oracle vision: Target is a ${target.role}` 
+                    });
+                    actor.history.push({
+                        phase: 'Night',
+                        action: `Scryed into the soul of ${targetName}`,
+                        result: `Vision revealed role: ${target.role}`
+                    });
+                }
             }
         }
     });
