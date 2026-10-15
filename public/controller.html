@@ -155,8 +155,7 @@
             </div>
         </div>
     </div>
-
-    <script src="/socket.io/socket.io.js"></script>
+<script src="/socket.io/socket.io.js"></script>
     <script>
         const socket = io();
 
@@ -167,13 +166,25 @@
         }
 
         let myUsername = localStorage.getItem('wolf_username');
-        if (myUsername) {
-            document.getElementById('username-input').value = myUsername;
-        }
-
         let selectedTargetId = null;
         let myRole = null;
         let cachedPlayers = [];
+
+        // Auto-reconnect if username exists in local storage on page load
+        if (myUsername) {
+            document.getElementById('username-input').value = myUsername;
+            socket.emit('register-player', { persistentId, username: myUsername }, (response) => {
+                if (response.success) {
+                    document.getElementById('join-screen').style.display = 'none';
+                    // If game hasn't started yet, fall back to waiting screen until server assigns role/phase
+                    document.getElementById('waiting-screen').style.display = 'block';
+                } else {
+                    localStorage.removeItem('wolf_username');
+                    document.getElementById('join-screen').style.display = 'block';
+                    document.getElementById('waiting-screen').style.display = 'none';
+                }
+            });
+        }
 
         // Handle joining with unique username
         document.getElementById('join-btn').addEventListener('click', () => {
@@ -206,16 +217,17 @@
             document.body.innerHTML = `<h2 style="color:#a93226; text-align:center; margin-top:50px; font-family:'Cinzel',serif;">You have been banished from the council.</h2>`;
         });
 
-        // Assigned Role handling
+        // Assigned Role handling (restores game container view)
         socket.on('assigned-role', (data) => {
             myRole = data.role;
             document.getElementById('join-screen').style.display = 'none';
             document.getElementById('waiting-screen').style.display = 'none';
+            document.getElementById('ghost-screen').style.display = 'none';
             document.getElementById('game-container').style.display = 'block';
             document.querySelectorAll('#role-display').forEach(el => el.innerText = data.role);
         });
 
-        // Phase Changed Handling
+        // Phase Changed Handling (syncs Day vs Night controller views properly on reload)
         socket.on('phase-changed', (data) => {
             const dayCtrl = document.getElementById('day-controller');
             const nightCtrl = document.getElementById('night-controller');
@@ -223,6 +235,12 @@
 
             if (data.players) {
                 cachedPlayers = data.players;
+            }
+
+            if (myRole) {
+                document.getElementById('join-screen').style.display = 'none';
+                document.getElementById('waiting-screen').style.display = 'none';
+                document.getElementById('game-container').style.display = 'block';
             }
 
             if (data.phase === 'night') {
@@ -244,10 +262,12 @@
             }
         });
 
-        // Toggle history modal
-        document.getElementById('toggle-history-btn').addEventListener('click', () => {
-            const modal = document.getElementById('history-modal');
-            modal.style.display = modal.style.display === 'none' ? 'block' : 'none';
+        // Listen for when this player dies / is eliminated
+        socket.on('player-eliminated', () => {
+            document.getElementById('join-screen').style.display = 'none';
+            document.getElementById('waiting-screen').style.display = 'none';
+            document.getElementById('game-container').style.display = 'none';
+            document.getElementById('ghost-screen').style.display = 'block';
         });
 
         // Reusable function to render target lists
@@ -307,6 +327,12 @@
             }
         });
 
+        // Toggle history modal
+        document.getElementById('toggle-history-btn').addEventListener('click', () => {
+            const modal = document.getElementById('history-modal');
+            modal.style.display = modal.style.display === 'none' ? 'block' : 'none';
+        });
+
         // Confirm action decree
         document.getElementById('action-btn').addEventListener('click', () => {
             if (!selectedTargetId) {
@@ -354,17 +380,8 @@
             summary.appendChild(item);
         });
 
-        // Listen for Seer / Oracle vision results
         socket.on('seer-result', (data) => {
             alert(data.message);
-        });
-
-        // Listen for when this player dies / is eliminated
-        socket.on('player-eliminated', () => {
-            document.getElementById('join-screen').style.display = 'none';
-            document.getElementById('waiting-screen').style.display = 'none';
-            document.getElementById('game-container').style.display = 'none';
-            document.getElementById('ghost-screen').style.display = 'block';
         });
 
         // Ghost chat handling

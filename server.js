@@ -67,16 +67,13 @@ io.on('connection', (socket) => {
             broadcastActionStatus(io, players);
         }
     });
-
-    // Register or reconnect phone controller using a persistent ID & Unique Username
+// Register or reconnect phone controller using a persistent ID & Unique Username
     socket.on('register-player', ({ persistentId, username }, callback) => {
         let player = players.find(p => p.persistentId === persistentId);
 
         if (player) {
-            // Reconnecting player
             player.id = socket.id;
             player.connected = true;
-            // Allow updating username if provided
             if (username && username.trim() !== '') {
                 player.username = username.trim();
             }
@@ -84,7 +81,6 @@ io.on('connection', (socket) => {
             
             if (callback) callback({ success: true, username: player.username });
         } else {
-            // New player registration - check for unique username
             const trimmedName = (username || '').trim();
             if (!trimmedName) {
                 if (callback) callback({ success: false, error: 'Username cannot be empty.' });
@@ -99,7 +95,7 @@ io.on('connection', (socket) => {
                 if (callback) callback({ success: false, error: 'Username is already taken by another player!' });
                 return;
             }
-            
+
             player = {
                 id: socket.id,
                 persistentId: persistentId || socket.id,
@@ -107,7 +103,7 @@ io.on('connection', (socket) => {
                 role: null,
                 alive: true,
                 connected: true,
-                history: [] // Initialize history log
+                history: []
             };
             players.push(player);
             console.log(`New player joined: ${player.username} (Total: ${players.length})`);
@@ -119,6 +115,8 @@ io.on('connection', (socket) => {
 
         if (player.role) {
             socket.emit('assigned-role', { role: player.role });
+            // CRITICAL FIX: Send the current phase so reloaded controllers match the game state immediately
+            socket.emit('phase-changed', { phase: currentPhase, players });
         }
 
         if (!player.alive) {
