@@ -13,6 +13,7 @@ const roleActions = {
 };
 
 let nightActionQueue = [];
+let actedPersistentIds = new Set(); // Track persistent IDs of players who acted this night
 
 function handlePlayerAction(socket, data, io, players) {
     const player = players.find(p => p.id === socket.id);
@@ -21,7 +22,37 @@ function handlePlayerAction(socket, data, io, players) {
     const role = player.role;
     if (roleActions[role]) {
         roleActions[role](socket, data, io, players, nightActionQueue);
+        
+        // Track that this player has taken an action
+        actedPersistentIds.add(player.persistentId);
+
+        // Notify the host about updated action status
+        broadcastActionStatus(io, players);
     }
+}
+
+// Check if all living players with active night roles (Wolf, GrandWolf, Doctor, Seer) have acted
+function areAllNightActionsSubmitted(players) {
+    const requiredRoles = ['Wolf', 'GrandWolf', 'Doctor', 'Seer'];
+    const activeLivingPlayers = players.filter(p => p.alive && requiredRoles.includes(p.role));
+
+    return activeLivingPlayers.every(p => actedPersistentIds.has(p.persistentId));
+}
+
+// Send current completion stats (e.g., "2/3 players acted") to host
+function broadcastActionStatus(io, players) {
+    const requiredRoles = ['Wolf', 'GrandWolf', 'Doctor', 'Seer'];
+    const activeLivingPlayers = players.filter(p => p.alive && requiredRoles.includes(p.role));
+    
+    const countActed = activeLivingPlayers.filter(p => actedPersistentIds.has(p.persistentId)).length;
+    const totalRequired = activeLivingPlayers.length;
+    const allReady = countActed >= totalRequired;
+
+    io.emit('night-status-update', {
+        actedCount: countActed,
+        totalRequired: totalRequired,
+        allReady: allReady
+    });
 }
 
 function resolveNightActions(io, players) {
@@ -31,7 +62,6 @@ function resolveNightActions(io, players) {
     let killedTargetId = null;
     let resultLog = "Night Results: ";
 
-    // Tally wolf votes (from Wolf and GrandWolf actions)
     const wolfVotes = {};
     
     nightActionQueue.forEach(action => {
@@ -52,7 +82,6 @@ function resolveNightActions(io, players) {
         }
     });
 
-    // Select the target with the highest votes
     let maxVotes = 0;
     for (const [targetId, count] of Object.entries(wolfVotes)) {
         if (count > maxVotes) {
@@ -61,7 +90,6 @@ function resolveNightActions(io, players) {
         }
     }
 
-    // Resolve kill vs save
     if (killedTargetId) {
         if (killedTargetId === savedTargetId) {
             resultLog += `The attack was successfully saved by the Apothecary! `;
@@ -79,9 +107,17 @@ function resolveNightActions(io, players) {
         resultLog += `The night was quiet. No blood was spilled. `;
     }
 
+    // Reset night action tracking for the next cycle
     nightActionQueue = [];
+    actedPersistentIds.clear();
+
     io.emit('game-log', { message: resultLog });
     io.emit('update-players', players);
 }
 
-module.exports = { handlePlayerAction, resolveNightActions };
+module.exports = { 
+    handlePlayerAction, 
+    resolveNightActions, 
+    areAllNightActionsSubmitted,
+    broadcastActionStatus 
+};

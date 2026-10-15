@@ -113,6 +113,12 @@
         <p>The village sleeps while the council takes their dark actions in secret.</p>
     </div>
 
+    <!-- Night Action Tracker -->
+
+    <div id="night-action-tracker" style="display:none; font-family:'Cinzel',serif; color:#d4af37; margin-top:15px;">
+    Night Actions Submitted: <span id="acted-count">0</span> / <span id="total-required">0</span>
+    </div>
+
     <button id="toggle-phase-btn">Switch to Night Phase</button>
 
     <script src="/socket.io/socket.io.js"></script>
@@ -123,11 +129,12 @@
         let currentPlayers = [];
 
         // Listen for phase changes
-        socket.on('phase-changed', (data) => {
+       socket.on('phase-changed', (data) => {
             const dayView = document.getElementById('day-view');
             const nightView = document.getElementById('night-view');
             const phaseName = document.getElementById('phase-name');
             const toggleBtn = document.getElementById('toggle-phase-btn');
+            const tracker = document.getElementById('night-action-tracker');
 
             phaseName.innerText = data.phase.toUpperCase();
             currentPlayers = data.players;
@@ -135,15 +142,43 @@
             if (data.phase === 'night') {
                 dayView.style.display = 'none';
                 nightView.style.display = 'block';
-                toggleBtn.innerText = 'Switch to Day Phase';
-                toggleBtn.style.background = '#8e44ad';
+                tracker.style.display = 'block';
+                
+                toggleBtn.innerText = 'Waiting for Night Actions...';
+                toggleBtn.style.background = '#555';
+                toggleBtn.disabled = true; // Disable until all act
             } else {
                 dayView.style.display = 'block';
                 nightView.style.display = 'none';
+                tracker.style.display = 'none';
+                
                 toggleBtn.innerText = 'Switch to Night Phase';
                 toggleBtn.style.background = '#a93226';
+                toggleBtn.disabled = false;
                 renderPlayerCircle(currentPlayers);
             }
+        });
+
+        // Listen for live progress updates on night actions
+        socket.on('night-status-update', (status) => {
+            document.getElementById('acted-count').innerText = status.actedCount;
+            document.getElementById('total-required').innerText = status.totalRequired;
+
+            const toggleBtn = document.getElementById('toggle-phase-btn');
+            if (status.allReady) {
+                toggleBtn.innerText = 'Switch to Day Phase';
+                toggleBtn.style.background = '#8e44ad';
+                toggleBtn.disabled = false;
+            } else {
+                toggleBtn.innerText = `Waiting for Actions (${status.actedCount}/${status.totalRequired})...`;
+                toggleBtn.style.background = '#555';
+                toggleBtn.disabled = true;
+            }
+        });
+
+        // Alert host if server rejects phase toggle
+        socket.on('phase-toggle-rejected', (data) => {
+            alert(data.reason);
         });
 
         // Render players dynamically around the round table with role, connection status, and a Kick button

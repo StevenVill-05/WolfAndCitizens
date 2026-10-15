@@ -4,8 +4,13 @@ const { Server } = require('socket.io');
 const os = require('os');
 const QRCode = require('qrcode');
 
-// Import modular role action handlers & night resolution
-const { handlePlayerAction, resolveNightActions } = require('./roleActions');
+// Import modular role action handlers & night resolution functions
+const { 
+    handlePlayerAction, 
+    resolveNightActions, 
+    areAllNightActionsSubmitted, 
+    broadcastActionStatus 
+} = require('./roleActions');
 
 const app = express();
 const server = http.createServer(app);
@@ -56,6 +61,11 @@ io.on('connection', (socket) => {
         console.log(`Host screen registered: ${socket.id}`);
         socket.emit('update-players', players);
         socket.emit('phase-changed', { phase: currentPhase, players });
+        
+        // If reconnecting during night, broadcast action tracking status immediately
+        if (currentPhase === 'night') {
+            broadcastActionStatus(io, players);
+        }
     });
 
     // Register or reconnect phone controller using a persistent ID & Unique Username
@@ -135,12 +145,22 @@ io.on('connection', (socket) => {
     // Handle host switching between Day and Night phases
     socket.on('toggle-phase', () => {
         if (currentPhase === 'night') {
+            // Validate that all living players with required night roles have acted
+            if (!areAllNightActionsSubmitted(players)) {
+                socket.emit('phase-toggle-rejected', {
+                    reason: 'Cannot switch to Day phase until all required night actions are submitted!'
+                });
+                return;
+            }
+
             // Transitioning from Night to Day -> Process priority actions (Kills, Saves, Seer)
             resolveNightActions(io, players);
             currentPhase = 'day';
         } else {
             // Transitioning from Day to Night
             currentPhase = 'night';
+            // Broadcast initial status for the new night phase
+            setTimeout(() => broadcastActionStatus(io, players), 100);
         }
 
         console.log(`Phase changed to: ${currentPhase}`);
@@ -163,7 +183,7 @@ io.on('connection', (socket) => {
         handlePlayerAction(socket, data, io, players);
     });
 
-// Wolf Chat using Username
+    // Wolf Chat using Username
     socket.on('wolf-chat-message', (message) => {
         const sender = players.find(p => p.id === socket.id);
         if (sender && sender.alive && (sender.role === 'Wolf' || sender.role === 'GrandWolf')) {
@@ -177,7 +197,8 @@ io.on('connection', (socket) => {
             });
         }
     });
-// Wolf Vote Notification using Username
+
+    // Wolf Vote Notification using Username
     socket.on('wolf-vote-cast', ({ targetId }) => {
         const voter = players.find(p => p.id === socket.id);
         const target = players.find(p => p.persistentId === targetId);
@@ -192,7 +213,8 @@ io.on('connection', (socket) => {
             });
         }
     });
-// Ghost Chat using Username
+
+    // Ghost Chat using Username
     socket.on('ghost-chat-message', (message) => {
         const sender = players.find(p => p.id === socket.id);
         if (sender && !sender.alive) {
@@ -224,8 +246,6 @@ io.on('connection', (socket) => {
             io.emit('update-players', players);
         }
     });
-
-
 });
 
 server.listen(PORT, () => {
