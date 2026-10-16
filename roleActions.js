@@ -138,9 +138,93 @@ function resolveNightActions(io, players) {
     io.emit('update-players', players);
 }
 
+// Add day vote tracking structures at the top of roleActions.js
+let dayVotes = {}; // Maps voterPersistentId -> targetPersistentId or 'abstain'
+
+function recordDayVote(voterPersistentId, targetPersistentId) {
+    dayVotes[voterPersistentId] = targetPersistentId;
+}
+function resolveDayVote(io, players) {
+    const voteCounts = {};
+    let totalVotesCast = 0;
+    let totalAbstain = 0;
+
+    // Tally votes from living players
+    players.filter(p => p.alive).forEach(player => {
+        const targetId = dayVotes[player.persistentId];
+
+        if (!targetId || targetId === 'abstain') {
+            totalAbstain++;
+            if (!player.history) player.history = [];
+            player.history.push({
+                phase: 'Day Trial',
+                action: 'Abstained from voting',
+                result: 'Chose not to cast a vote.'
+            });
+        } else {
+            totalVotesCast++;
+            voteCounts[targetId] = (voteCounts[targetId] || 0) + 1;
+            
+            const targetPlayer = players.find(p => p.persistentId === targetId);
+            if (!player.history) player.history = [];
+            player.history.push({
+                phase: 'Day Trial',
+                action: `Voted to banish ${targetPlayer ? targetPlayer.username : 'Unknown'}`,
+                result: 'Vote submitted to trial.'
+            });
+        }
+    });
+
+    // Find candidate with maximum votes
+    let maxVotes = 0;
+    let topCandidates = [];
+
+    for (const [targetId, count] of Object.entries(voteCounts)) {
+        if (count > maxVotes) {
+            maxVotes = count;
+            topCandidates = [targetId];
+        } else if (count === maxVotes) {
+            topCandidates.push(targetId);
+        }
+    }
+
+    let resultLog = `Day Trial Results: (${totalVotesCast} votes cast, ${totalAbstain} abstained). `;
+
+    // Handle Tie or No Votes
+    if (topCandidates.length === 0 || maxVotes === 0) {
+        resultLog += `The council abstained. No one was hanged today.`;
+    } else if (topCandidates.length > 1) {
+        resultLog += `The vote resulted in a tie (${maxVotes} votes each). The council could not reach consensus; no one was hanged!`;
+    } else {
+        // Clear majority winner
+        const hangedPersistentId = topCandidates[0];
+        const victim = players.find(p => p.persistentId === hangedPersistentId);
+
+        if (victim) {
+            victim.alive = false; // Mark player dead on server
+            resultLog += `By majority decree, ${victim.username} was hanged in the village square! Their true role was ${victim.role}.`;
+            
+            // Notify the victim's socket to switch to ghost screen
+            if (victim.id) {
+                io.to(victim.id).emit('player-eliminated');
+            }
+        }
+    }
+
+    // Clear day votes for the next cycle
+    dayVotes = {};
+
+    io.emit('game-log', { message: resultLog });
+    io.emit('update-players', players);
+    
+    return resultLog;
+}
+
 module.exports = { 
     handlePlayerAction, 
     resolveNightActions, 
     areAllNightActionsSubmitted,
-    broadcastActionStatus 
+    broadcastActionStatus,
+    recordDayVote,
+    resolveDayVote
 };

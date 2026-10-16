@@ -9,8 +9,11 @@ const {
     handlePlayerAction, 
     resolveNightActions, 
     areAllNightActionsSubmitted, 
-    broadcastActionStatus 
+    broadcastActionStatus,
+    recordDayVote,
+    resolveDayVote
 } = require('./roleActions');
+
 
 const app = express();
 const server = http.createServer(app);
@@ -53,6 +56,21 @@ app.get('/api/qrcode', async (req, res) => {
 
 // Handle real-time socket connections from phones and PC
 io.on('connection', (socket) => {
+
+    // Record day trial vote
+    socket.on('submit-day-vote', ({ targetId }) => {
+        const voter = players.find(p => p.id === socket.id);
+        if (voter && voter.alive) {
+            recordDayVote(voter.persistentId, targetId);
+            
+            const targetPlayer = players.find(p => p.persistentId === targetId);
+            const targetName = targetId === 'abstain' ? 'Abstain' : (targetPlayer ? targetPlayer.username : 'Unknown');
+            
+            console.log(`Day Vote: ${voter.username} voted for ${targetName}`);
+            socket.emit('day-vote-confirmed', { targetName });
+        }
+    });
+     
     console.log(`A device connected: ${socket.id}`);
 
     // Register browser tab as the Host screen
@@ -142,9 +160,8 @@ io.on('connection', (socket) => {
     });
 
     // Handle host switching between Day and Night phases
-    socket.on('toggle-phase', () => {
+   socket.on('toggle-phase', () => {
         if (currentPhase === 'night') {
-            // Validate that all living players with required night roles have acted
             if (!areAllNightActionsSubmitted(players)) {
                 socket.emit('phase-toggle-rejected', {
                     reason: 'Cannot switch to Day phase until all required night actions are submitted!'
@@ -152,20 +169,19 @@ io.on('connection', (socket) => {
                 return;
             }
 
-            // Transitioning from Night to Day -> Process priority actions (Kills, Saves, Seer)
             resolveNightActions(io, players);
             currentPhase = 'day';
         } else {
-            // Transitioning from Day to Night
+            // Transitioning from Day -> Night: Resolve Day Voting First
+            resolveDayVote(io, players);
             currentPhase = 'night';
-            // Broadcast initial status for the new night phase
             setTimeout(() => broadcastActionStatus(io, players), 100);
         }
 
         console.log(`Phase changed to: ${currentPhase}`);
         io.emit('phase-changed', { phase: currentPhase, players });
     });
-
+    
     // Host manually kicks a player out
     socket.on('kick-player', (persistentId) => {
         console.log(`Host kicked player with ID: ${persistentId}`);

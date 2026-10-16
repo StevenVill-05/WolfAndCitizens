@@ -10,7 +10,6 @@
         body {
             font-family: 'Georgia', serif;
             text-align: center;
-            /* Aged parchment / dark stone background */
             background: radial-gradient(circle, #2b2621 0%, #110e0c 100%);
             color: #d8cca6;
             margin: 0;
@@ -19,14 +18,14 @@
 
         h2, h3 {
             font-family: 'Cinzel', serif;
-            color: #d4af37; /* Antique Gold */
+            color: #d4af37;
             letter-spacing: 1px;
         }
 
         .screen {
             display: none;
             background: #1c1817;
-            border: 2px solid #5c4033; /* Rustic wood frame */
+            border: 2px solid #5c4033;
             border-radius: 8px;
             padding: 20px;
             max-width: 400px;
@@ -34,12 +33,11 @@
             box-shadow: 0 4px 15px rgba(0,0,0,0.8);
         }
 
-        #join-screen { display: block; } /* Default active screen for username entry */
+        #join-screen { display: block; }
 
-        /* Gothic Buttons */
         button {
             font-family: 'Cinzel', serif;
-            background: #a93226; /* Crimson Red */
+            background: #a93226;
             color: #f0e6d2;
             border: 2px solid #d4af37;
             padding: 12px 20px;
@@ -53,12 +51,9 @@
             transition: background 0.2s;
         }
 
-        button:hover {
-            background: #c0392b;
-        }
+        button:hover { background: #c0392b; }
 
-        /* Target selection list styling */
-        #target-list button {
+        #target-list button, #day-vote-list button {
             background: #231c18;
             border: 1px solid #5c4033;
             color: #d8cca6;
@@ -67,7 +62,7 @@
             margin: 6px 0;
         }
 
-        #target-list button:hover {
+        #target-list button:hover, #day-vote-list button:hover {
             background: #3d2817;
             border-color: #d4af37;
         }
@@ -99,15 +94,24 @@
         <div id="role-display">...</div>
     </div>
 
-    <!-- GAMEPLAY / NIGHT ACTION SCREEN -->
+    <!-- GAMEPLAY SCREEN -->
     <div id="game-container" class="screen">
         <h3>Your Secret Role</h3>
         <div id="role-display" style="font-size: 20px; color: #d4af37;">...</div>
 
+        <!-- DAY CONTROLLER VIEW -->
         <div id="day-controller">
-            <p>The council gathers in the light of day. Discuss and deliberate.</p>
+            <p style="font-size: 13px;">The council gathers in the light of day. Cast your vote for execution or abstain:</p>
+            
+            <div id="day-vote-list" style="max-height: 180px; overflow-y: auto; text-align: left; margin-bottom: 10px;">
+                <!-- Dynamic player target buttons + abstain button rendered here -->
+            </div>
+            
+            <button id="submit-day-vote-btn" style="display:none; background: #c0392b; border-color: #d4af37;">Cast Banishing Vote</button>
+            <div id="day-vote-status" style="margin-top: 8px; font-size: 12px; color: #d4af37; font-style: italic;"></div>
         </div>
 
+        <!-- NIGHT CONTROLLER VIEW -->
         <div id="night-controller" style="display:none;">
             <h3 style="color: #8e44ad;">🌙 The Witching Hour</h3>
             <p style="font-size: 13px; color: #b8a38a;">Choose your target from the council seats:</p>
@@ -116,7 +120,7 @@
             </div>
             <button id="action-btn" style="display:none; background: #8e44ad; border-color: #d4af37;">Confirm Dark Decree</button>
 
-            <!-- WOLF DEN CHAT & VOTES PANEL (Nested inside Night Controller) -->
+            <!-- WOLF DEN CHAT & VOTES PANEL -->
             <div id="wolf-pack-panel" style="display:none; margin-top:15px; background: #1c1012; border: 1px solid #b22222; padding: 10px; border-radius: 4px;">
                 <h4 style="color: #e74c3c; margin: 0 0 8px 0; font-family: 'Cinzel', serif;">🐺 Wolf Den Whispers</h4>
                 <div id="wolf-chat-box" style="height: 100px; overflow-y: auto; background: #110b0c; border: 1px solid #444; padding: 5px; font-size: 11px; text-align: left; margin-bottom: 8px;"></div>
@@ -134,10 +138,7 @@
         <h2 style="color: #9b59b6; font-family: 'Cinzel', serif;">👻 The Spirit Realm</h2>
         <p style="font-size: 13px; color: #aaa;">You have fallen in the council. Watch from the shadows and converse with fellow spirits.</p>
         
-        <!-- Ghost Chat Box -->
-        <div id="ghost-chat-box" style="background: #1a161f; border: 1px solid #333; height: 160px; overflow-y: auto; padding: 10px; margin-bottom: 10px; text-align: left; font-size: 12px; border-radius: 4px;">
-            <!-- Messages injected here -->
-        </div>
+        <div id="ghost-chat-box" style="background: #1a161f; border: 1px solid #333; height: 160px; overflow-y: auto; padding: 10px; margin-bottom: 10px; text-align: left; font-size: 12px; border-radius: 4px;"></div>
         <div style="display: flex; gap: 5px;">
             <input type="text" id="ghost-input" placeholder="Whisper from beyond..." style="flex: 1; padding: 8px; background: #222; border: 1px solid #444; color: #fff; border-radius: 4px;">
             <button id="ghost-send-btn" style="margin-top:0; width: 80px; background: #6c5ce7;">Send</button>
@@ -155,7 +156,8 @@
             </div>
         </div>
     </div>
-<script src="/socket.io/socket.io.js"></script>
+
+    <script src="/socket.io/socket.io.js"></script>
     <script>
         const socket = io();
 
@@ -167,7 +169,9 @@
 
         let myUsername = localStorage.getItem('wolf_username');
         let selectedTargetId = null;
+        let selectedDayVoteId = null;
         let myRole = null;
+        let isAlive = true; // Track life status globally
         let cachedPlayers = [];
 
         // Auto-reconnect if username exists in local storage on page load
@@ -176,7 +180,6 @@
             socket.emit('register-player', { persistentId, username: myUsername }, (response) => {
                 if (response.success) {
                     document.getElementById('join-screen').style.display = 'none';
-                    // If game hasn't started yet, fall back to waiting screen until server assigns role/phase
                     document.getElementById('waiting-screen').style.display = 'block';
                 } else {
                     localStorage.removeItem('wolf_username');
@@ -217,17 +220,28 @@
             document.body.innerHTML = `<h2 style="color:#a93226; text-align:center; margin-top:50px; font-family:'Cinzel',serif;">You have been banished from the council.</h2>`;
         });
 
-        // Assigned Role handling (restores game container view)
+        // Assigned Role handling
         socket.on('assigned-role', (data) => {
             myRole = data.role;
-            document.getElementById('join-screen').style.display = 'none';
-            document.getElementById('waiting-screen').style.display = 'none';
-            document.getElementById('ghost-screen').style.display = 'none';
-            document.getElementById('game-container').style.display = 'block';
-            document.querySelectorAll('#role-display').forEach(el => el.innerText = data.role);
+            if (isAlive) {
+                document.getElementById('join-screen').style.display = 'none';
+                document.getElementById('waiting-screen').style.display = 'none';
+                document.getElementById('ghost-screen').style.display = 'none';
+                document.getElementById('game-container').style.display = 'block';
+                document.querySelectorAll('#role-display').forEach(el => el.innerText = data.role);
+            }
         });
 
-        // Phase Changed Handling (syncs Day vs Night controller views properly on reload)
+        // Listen for when this player dies / is eliminated
+        socket.on('player-eliminated', () => {
+            isAlive = false; // Mark dead locally
+            document.getElementById('join-screen').style.display = 'none';
+            document.getElementById('waiting-screen').style.display = 'none';
+            document.getElementById('game-container').style.display = 'none';
+            document.getElementById('ghost-screen').style.display = 'block';
+        });
+
+        // Phase Changed Handling
         socket.on('phase-changed', (data) => {
             const dayCtrl = document.getElementById('day-controller');
             const nightCtrl = document.getElementById('night-controller');
@@ -235,11 +249,27 @@
 
             if (data.players) {
                 cachedPlayers = data.players;
+                // Double-check our life status from server state list
+                const me = cachedPlayers.find(p => p.persistentId === persistentId);
+                if (me && !me.alive) {
+                    isAlive = false;
+                }
             }
 
+            // CRITICAL FIX: IF DEAD, STAY IN GHOST REALM ONLY!
+            if (!isAlive) {
+                document.getElementById('join-screen').style.display = 'none';
+                document.getElementById('waiting-screen').style.display = 'none';
+                document.getElementById('game-container').style.display = 'none';
+                document.getElementById('ghost-screen').style.display = 'block';
+                return;
+            }
+
+            // If living, render the action UI properly
             if (myRole) {
                 document.getElementById('join-screen').style.display = 'none';
                 document.getElementById('waiting-screen').style.display = 'none';
+                document.getElementById('ghost-screen').style.display = 'none';
                 document.getElementById('game-container').style.display = 'block';
             }
 
@@ -259,19 +289,106 @@
                 wolfPanel.style.display = 'none';
                 selectedTargetId = null;
                 document.getElementById('action-btn').style.display = 'none';
+                document.getElementById('day-vote-status').innerText = '';
+                
+                renderDayVoteList();
             }
         });
 
-        // Listen for when this player dies / is eliminated
-        socket.on('player-eliminated', () => {
-            document.getElementById('join-screen').style.display = 'none';
-            document.getElementById('waiting-screen').style.display = 'none';
-            document.getElementById('game-container').style.display = 'none';
-            document.getElementById('ghost-screen').style.display = 'block';
+        // Sync player status on update
+        socket.on('update-players', (players) => {
+            cachedPlayers = players;
+            
+            const me = players.find(p => p.persistentId === persistentId);
+            if (me) {
+                if (!me.alive) {
+                    isAlive = false;
+                    document.getElementById('game-container').style.display = 'none';
+                    document.getElementById('ghost-screen').style.display = 'block';
+                }
+
+                if (me.history) {
+                    const historyList = document.getElementById('history-list');
+                    if (historyList) {
+                        historyList.innerHTML = '';
+                        if (me.history.length === 0) {
+                            historyList.innerHTML = '<p style="font-style: italic; color: #888;">No actions recorded yet...</p>';
+                        } else {
+                            me.history.forEach((record, index) => {
+                                const div = document.createElement('div');
+                                div.style.marginBottom = '6px';
+                                div.style.borderBottom = '1px dashed #333';
+                                div.style.paddingBottom = '4px';
+                                div.innerHTML = `<b>#${index + 1} [${record.phase}]</b>: ${record.action}<br><span style="color: #d4af37;">Outcome: ${record.result}</span>`;
+                                historyList.appendChild(div);
+                            });
+                        }
+                    }
+                }
+            }
+
+            if (isAlive) {
+                renderTargetList();
+                renderDayVoteList();
+            }
         });
 
-        // Reusable function to render target lists
+        // Render Day Vote list (Abstain + All Living Players)
+        function renderDayVoteList() {
+            if (!isAlive) return;
+            const dayVoteListEl = document.getElementById('day-vote-list');
+            if (!dayVoteListEl) return;
+
+            dayVoteListEl.innerHTML = '';
+            selectedDayVoteId = null;
+            document.getElementById('submit-day-vote-btn').style.display = 'none';
+
+            // 1. Abstain Option Button
+            const abstainBtn = document.createElement('button');
+            abstainBtn.innerText = '✋ Abstain (No Vote)';
+            abstainBtn.style.background = '#2c2c2c';
+            abstainBtn.style.borderColor = '#777';
+            abstainBtn.onclick = () => {
+                document.querySelectorAll('#day-vote-list button').forEach(b => b.style.background = '#231c18');
+                abstainBtn.style.background = '#555';
+                selectedDayVoteId = 'abstain';
+                document.getElementById('submit-day-vote-btn').style.display = 'block';
+            };
+            dayVoteListEl.appendChild(abstainBtn);
+
+            // 2. All Living Players
+            cachedPlayers.forEach((player) => {
+                if (player.alive) {
+                    const btn = document.createElement('button');
+                    const isSelf = player.persistentId === persistentId;
+                    
+                    btn.innerText = `⚖️ ${player.username || 'Unknown Soul'}${isSelf ? ' (You)' : ''}`;
+                    btn.onclick = () => {
+                        document.querySelectorAll('#day-vote-list button').forEach(b => b.style.background = '#231c18');
+                        btn.style.background = '#8e44ad';
+                        selectedDayVoteId = player.persistentId;
+                        document.getElementById('submit-day-vote-btn').style.display = 'block';
+                    };
+                    dayVoteListEl.appendChild(btn);
+                }
+            });
+        }
+
+        // Submit Day Vote Button Listener
+        document.getElementById('submit-day-vote-btn').addEventListener('click', () => {
+            if (!selectedDayVoteId) return;
+            
+            socket.emit('submit-day-vote', { targetId: selectedDayVoteId });
+            document.getElementById('submit-day-vote-btn').style.display = 'none';
+        });
+
+        socket.on('day-vote-confirmed', (data) => {
+            document.getElementById('day-vote-status').innerText = `Your vote for [${data.targetName}] has been recorded.`;
+        });
+
+        // Reusable function to render night target list
         function renderTargetList() {
+            if (!isAlive) return;
             const targetListEl = document.getElementById('target-list');
             if (!targetListEl) return;
             
@@ -298,34 +415,6 @@
                 }
             });
         }
-
-        // Listen for player updates
-        socket.on('update-players', (players) => {
-            cachedPlayers = players;
-            renderTargetList();
-
-            const me = players.find(p => p.persistentId === persistentId);
-            if (me && me.history) {
-                const historyList = document.getElementById('history-list');
-                if (historyList) {
-                    historyList.innerHTML = '';
-
-                    if (me.history.length === 0) {
-                        historyList.innerHTML = '<p style="font-style: italic; color: #888;">No actions recorded yet...</p>';
-                        return;
-                    }
-
-                    me.history.forEach((record, index) => {
-                        const div = document.createElement('div');
-                        div.style.marginBottom = '6px';
-                        div.style.borderBottom = '1px dashed #333';
-                        div.style.paddingBottom = '4px';
-                        div.innerHTML = `<b>#${index + 1} [${record.phase}]</b>: ${record.action}<br><span style="color: #d4af37;">Outcome: ${record.result}</span>`;
-                        historyList.appendChild(div);
-                    });
-                }
-            }
-        });
 
         // Toggle history modal
         document.getElementById('toggle-history-btn').addEventListener('click', () => {
