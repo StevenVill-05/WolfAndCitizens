@@ -387,8 +387,8 @@
         });
 
         // Reusable function to render night target list
+       // Reusable function to render night target lists (Now includes self)
         function renderTargetList() {
-            if (!isAlive) return;
             const targetListEl = document.getElementById('target-list');
             if (!targetListEl) return;
             
@@ -402,9 +402,12 @@
             }
 
             cachedPlayers.forEach((player) => {
-                if (player.alive && player.persistentId !== persistentId) {
+                // Show living players (Removed 'player.persistentId !== persistentId' check)
+                if (player.alive) {
                     const btn = document.createElement('button');
-                    btn.innerText = player.username || 'Unknown Soul';
+                    const isSelf = player.persistentId === persistentId;
+                    
+                    btn.innerText = `${player.username || 'Unknown Soul'}${isSelf ? ' (You)' : ''}`;
                     btn.onclick = () => {
                         document.querySelectorAll('#target-list button').forEach(b => b.style.background = '#231c18');
                         btn.style.background = '#5c4033';
