@@ -56,7 +56,7 @@ function broadcastActionStatus(io, players) {
         totalRequired: totalRequired,
         allReady: allReady
     });
-}const { recordNightAction } = require('./historyHelper');
+}
 
 function resolveNightActions(io, players, dayNum) {
     nightActionQueue.sort((a, b) => a.priority - b.priority);
