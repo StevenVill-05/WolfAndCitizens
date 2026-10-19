@@ -3,7 +3,7 @@ const http = require('http');
 const { Server } = require('socket.io');
 const os = require('os');
 const QRCode = require('qrcode');
-const { recordDayVoteAction } = require('./historyHelper');
+const { getAllHistory, recordDayVoteAction } = require('./historyHelper');
 
 // Import modular role action handlers & night resolution functions
 const { 
@@ -44,7 +44,7 @@ const controllerURL = `http://${localIP}:${PORT}/controller.html`;
 let players = [];
 let hostSocketId = null;
 let currentPhase = 'day'; // Default starting phase
-let currentDay = 1;
+let currentDay = 0;
 
 // Route to generate a QR code data URL for the big screen to display
 app.get('/api/qrcode', async (req, res) => {
@@ -58,6 +58,15 @@ app.get('/api/qrcode', async (req, res) => {
 
 // Handle real-time socket connections from phones and PC
 io.on('connection', (socket) => {
+
+    // Send history data whenever the host requests it or connects
+socket.on('request-history-data', () => {
+    socket.emit('update-history-data', {
+        historyData: getAllHistory(),
+        players: players
+    });
+});
+
 
     // Record day trial vote
     socket.on('submit-day-vote', ({ targetId }) => {
@@ -186,6 +195,12 @@ io.on('connection', (socket) => {
 
         console.log(`Phase changed to: ${currentPhase} (Day ${currentDay})`);
         io.emit('phase-changed', { phase: currentPhase, players, currentDay });
+
+        io.emit('update-history-data', {
+        historyData: getAllHistory(),
+        players: players
+    });
+
     });
     
     // Host manually kicks a player out

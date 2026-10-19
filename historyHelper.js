@@ -38,11 +38,16 @@ function getPlayerDataForDay(day, persistentId) {
 function resetHistory() {
     historyData = {};
 }
+function getAllHistory() {
+    return historyData;
+}
+
 
 module.exports = {
     recordNightAction,
     recordDayVoteAction,
     getPlayerDataForDay,
+    getAllHistory,
     resetHistory
 };
 

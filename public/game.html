@@ -30,25 +30,25 @@
             letter-spacing: 1px;
         }
         
-        /* The Round Table Arena (Styled like a heavy oak council table) */
+        /* The Round Table Arena */
         .circle-arena { 
             position: relative; 
             width: 480px; 
             height: 480px; 
             margin: 20px auto; 
             background: radial-gradient(circle, #3d2817 0%, #1c100a 85%);
-            border: 10px solid #5c4033; /* Thick rustic wood/bronze rim */
+            border: 10px solid #5c4033; /* Thick rustic wood rim */
             border-radius: 50%; 
             box-shadow: 0 10px 30px rgba(0,0,0,0.9), inset 0 0 40px rgba(0,0,0,0.8);
         }
 
-        /* Player tokens styled like iron shields or wax seals */
+        /* Player tokens */
         .player-icon {
             position: absolute;
             width: 90px;
             height: 90px;
             background: #231c18;
-            border: 2px solid #d4af37; /* Antique gold trim */
+            border: 2px solid #d4af37;
             color: #f0e6d2;
             font-family: 'Cinzel', serif;
             border-radius: 50%; 
@@ -95,6 +95,92 @@
             box-shadow: 0 4px 10px rgba(0,0,0,0.5);
         }
         #toggle-phase-btn:hover { background: #c0392b; }
+
+        /* Floating History Button */
+        #history-trigger-btn {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            padding: 12px 20px;
+            background: #3d2817;
+            color: #d4af37;
+            border: 2px solid #d4af37;
+            font-family: 'Cinzel', serif;
+            border-radius: 6px;
+            cursor: pointer;
+            z-index: 1000;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.8);
+            transition: background 0.2s;
+        }
+        #history-trigger-btn:hover {
+            background: #5c4033;
+        }
+
+        /* Host History Log Modal */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: rgba(0,0,0,0.85);
+            z-index: 2000;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .modal-card {
+            background: #1c1817;
+            border: 2px solid #d4af37;
+            width: 85%;
+            max-width: 800px;
+            max-height: 80vh;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.9);
+            display: flex;
+            flex-direction: column;
+            text-align: left;
+            color: #d8cca6;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #5c4033;
+            padding-bottom: 10px;
+            margin-bottom: 15px;
+        }
+
+        .modal-body {
+            overflow-y: auto;
+            flex: 1;
+        }
+
+        .history-day-card {
+            background: #120e0d;
+            border-radius: 6px;
+            padding: 12px;
+            margin-bottom: 15px;
+            border: 1px solid #5c4033;
+        }
+
+        .history-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+            margin-top: 8px;
+        }
+
+        .history-table th, .history-table td {
+            padding: 8px;
+            border-bottom: 1px solid #333;
+            text-align: left;
+        }
+
+        .history-table th {
+            color: #b8a38a;
+        }
     </style>
 </head>
 <body>
@@ -114,12 +200,27 @@
     </div>
 
     <!-- Night Action Tracker -->
-
     <div id="night-action-tracker" style="display:none; font-family:'Cinzel',serif; color:#d4af37; margin-top:15px;">
-    Night Actions Submitted: <span id="acted-count">0</span> / <span id="total-required">0</span>
+        Night Actions Submitted: <span id="acted-count">0</span> / <span id="total-required">0</span>
     </div>
 
     <button id="toggle-phase-btn">Switch to Night Phase</button>
+
+    <!-- Floating Host History Trigger Button -->
+    <button id="history-trigger-btn">📜 Host Archives Log</button>
+
+    <!-- History Log Modal Window -->
+    <div id="history-modal" class="modal-overlay">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h3 style="margin:0; color:#d4af37; font-family:'Cinzel',serif;">📜 High Council Archives</h3>
+                <button id="close-history-btn" style="background:#a93226; color:#fff; border:1px solid #d4af37; padding:6px 12px; border-radius:4px; cursor:pointer;">✕ Close</button>
+            </div>
+            <div id="history-modal-body" class="modal-body">
+                <p style="color:#888; font-style:italic; text-align:center;">No records in the archives yet...</p>
+            </div>
+        </div>
+    </div>
 
     <script src="/socket.io/socket.io.js"></script>
     <script>
@@ -129,7 +230,7 @@
         let currentPlayers = [];
 
         // Listen for phase changes
-       socket.on('phase-changed', (data) => {
+        socket.on('phase-changed', (data) => {
             const dayView = document.getElementById('day-view');
             const nightView = document.getElementById('night-view');
             const phaseName = document.getElementById('phase-name');
@@ -146,7 +247,7 @@
                 
                 toggleBtn.innerText = 'Waiting for Night Actions...';
                 toggleBtn.style.background = '#555';
-                toggleBtn.disabled = true; // Disable until all act
+                toggleBtn.disabled = true;
             } else {
                 dayView.style.display = 'block';
                 nightView.style.display = 'none';
@@ -181,13 +282,13 @@
             alert(data.reason);
         });
 
-        // Render players dynamically around the round table with role, connection status, and a Kick button
+        // Render players dynamically around the round table
         function renderPlayerCircle(players) {
             const arena = document.getElementById('circle-arena');
             arena.innerHTML = '';
             
             const radius = 175;
-            const centerX = 240; // Center offset for 480x480 table
+            const centerX = 240;
             const centerY = 240;
             const total = players.length;
 
@@ -221,7 +322,7 @@
             });
         }
 
-        // Function for the host to banish/kick a player during the game
+        // Host kick handler
         function kickPlayer(persistentId) {
             if (confirm("Are you sure you wish to banish this soul from the council?")) {
                 socket.emit('kick-player', persistentId);
@@ -235,6 +336,73 @@
         socket.on('update-players', (players) => {
             currentPlayers = players;
             renderPlayerCircle(players);
+        });
+
+        // Modal Controls & History Request
+        const historyModal = document.getElementById('history-modal');
+        document.getElementById('history-trigger-btn').addEventListener('click', () => {
+            socket.emit('request-history-data');
+            historyModal.style.display = 'flex';
+        });
+
+        document.getElementById('close-history-btn').addEventListener('click', () => {
+            historyModal.style.display = 'none';
+        });
+
+        // Render History Log Data
+        socket.on('update-history-data', ({ historyData, players }) => {
+            const bodyEl = document.getElementById('history-modal-body');
+            if (!bodyEl) return;
+
+            const playerPool = players || currentPlayers;
+            bodyEl.innerHTML = '';
+
+            const days = Object.keys(historyData || {});
+            if (days.length === 0) {
+                bodyEl.innerHTML = '<p style="color:#888; font-style:italic; text-align:center;">No history recorded yet...</p>';
+                return;
+            }
+
+            const resolveName = (pId) => {
+                if (!pId) return '<span style="color:#666;">None</span>';
+                if (pId === 'abstain') return '<span style="color:#f39c12;">Abstained</span>';
+                const found = playerPool.find(p => p.persistentId === pId);
+                return found ? found.username : pId;
+            };
+
+            days.sort((a, b) => b - a).forEach(day => {
+                const dayDiv = document.createElement('div');
+                dayDiv.className = 'history-day-card';
+
+                let html = `<h4 style="margin:0 0 8px 0; color:#d4af37; font-family:'Cinzel',serif; border-bottom:1px dashed #444; padding-bottom:4px;">Calendar Day ${day}</h4>`;
+                html += `<table class="history-table">
+                            <thead>
+                                <tr>
+                                    <th>Player</th>
+                                    <th>🌙 Night Visit Target</th>
+                                    <th>⚖️ Day Banishing Vote</th>
+                                </tr>
+                            </thead>
+                            <tbody>`;
+
+                const records = historyData[day];
+                Object.keys(records).forEach(persistentId => {
+                    const entry = records[persistentId];
+                    const actorName = resolveName(persistentId);
+                    const nightTarget = resolveName(entry.nightTarget);
+                    const dayVote = resolveName(entry.dayVote);
+
+                    html += `<tr>
+                                <td><b style="color:#f0e6d2;">${actorName}</b></td>
+                                <td style="color:#8e44ad;">${nightTarget}</td>
+                                <td style="color:#e74c3c;">${dayVote}</td>
+                            </tr>`;
+                });
+
+                html += `</tbody></table>`;
+                dayDiv.innerHTML = html;
+                bodyEl.appendChild(dayDiv);
+            });
         });
     </script>
 </body>

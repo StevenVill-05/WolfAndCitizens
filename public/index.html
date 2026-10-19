@@ -38,6 +38,92 @@
         }
         #start-btn:hover { background: #27ae60; }
         .url-display { font-size: 12px; color: #aaa; word-break: break-all; text-align: center; margin-top: 10px; }
+
+        /* Host History Trigger Button */
+        #history-trigger-btn {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: #e74c3c;
+            color: #fff;
+            border: 1px solid #c0392b;
+            padding: 12px 18px;
+            border-radius: 25px;
+            font-weight: bold;
+            cursor: pointer;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+            transition: transform 0.2s, background 0.2s;
+            z-index: 1000;
+        }
+        #history-trigger-btn:hover {
+            transform: scale(1.05);
+            background: #c0392b;
+        }
+
+        /* History Modal Overlay */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: rgba(0,0,0,0.85);
+            z-index: 2000;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .modal-card {
+            background: #1e1e1e;
+            border: 1px solid #444;
+            border-radius: 12px;
+            width: 85%;
+            max-width: 750px;
+            max-height: 80vh;
+            padding: 20px;
+            box-shadow: 0 8px 25px rgba(0,0,0,0.8);
+            display: flex;
+            flex-direction: column;
+            text-align: left;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #333;
+            padding-bottom: 10px;
+            margin-bottom: 15px;
+        }
+
+        .modal-body {
+            overflow-y: auto;
+            flex: 1;
+        }
+
+        .history-day-card {
+            background: #282828;
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 15px;
+            border: 1px solid #3a3a3a;
+        }
+
+        .history-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+            margin-top: 8px;
+        }
+
+        .history-table th, .history-table td {
+            padding: 8px;
+            border-bottom: 1px solid #3a3a3a;
+            text-align: left;
+        }
+
+        .history-table th {
+            color: #aaa;
+        }
     </style>
 </head>
 <body>
@@ -61,12 +147,12 @@
             <h3>Role Pool</h3>
             <p style="font-size: 12px; color: #aaa; text-align: center;">Click to include/exclude roles:</p>
             <div class="bubbles-container" id="role-bubbles">
-    <div class="role-bubble active" data-role="Wolf">🐺 Dread Beast</div>
-    <div class="role-bubble" data-role="GrandWolf">👑 Grand Wolf</div>
-    <div class="role-bubble active" data-role="Citizen">🧑 Peasant</div>
-    <div class="role-bubble active" data-role="Seer">🔮 Oracle</div>
-    <div class="role-bubble active" data-role="Doctor">🧪 Apothecary</div>
-</div>
+                <div class="role-bubble active" data-role="Wolf">🐺 Dread Beast</div>
+                <div class="role-bubble" data-role="GrandWolf">👑 Grand Wolf</div>
+                <div class="role-bubble active" data-role="Citizen">🧑 Peasant</div>
+                <div class="role-bubble active" data-role="Seer">🔮 Oracle</div>
+                <div class="role-bubble active" data-role="Doctor">🧪 Apothecary</div>
+            </div>
         </div>
 
         <!-- Connected Players Panel -->
@@ -78,10 +164,29 @@
             <button id="start-btn">Start Game</button>
         </div>
     </div>
-<script src="/socket.io/socket.io.js"></script>
+
+    <!-- Floating Host History Trigger -->
+    <button id="history-trigger-btn">📜 Host History Log</button>
+
+    <!-- History Log Modal -->
+    <div id="history-modal" class="modal-overlay">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h3 style="margin:0; color:#e74c3c;">📜 Session Action History Log</h3>
+                <button id="close-history-btn" style="background:#444; color:#fff; border:none; padding:6px 12px; border-radius:4px; cursor:pointer;">✕ Close</button>
+            </div>
+            <div id="history-modal-body" class="modal-body">
+                <p style="color:#888; font-style:italic; text-align:center;">No actions recorded yet...</p>
+            </div>
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
     <script>
         const socket = io();
         socket.emit('register-host');
+
+        let cachedPlayersList = [];
 
         fetch('/api/qrcode')
             .then(res => res.json())
@@ -99,12 +204,12 @@
 
         // Listen for player updates and connection statuses
         socket.on('update-players', (players) => {
+            cachedPlayersList = players;
             const listEl = document.getElementById('player-list');
             const countEl = document.getElementById('player-count');
             const startBtn = document.getElementById('start-btn');
             
             listEl.innerHTML = '';
-            // Only count players who are actively connected
             countEl.innerText = players.filter(p => p.connected).length;
 
             if (players.length === 0) {
@@ -147,6 +252,73 @@
 
             socket.emit('start-game', selectedRoles);
             window.location.href = '/game.html';
+        });
+
+        // Modal Controls
+        const historyModal = document.getElementById('history-modal');
+        document.getElementById('history-trigger-btn').addEventListener('click', () => {
+            socket.emit('request-history-data');
+            historyModal.style.display = 'flex';
+        });
+
+        document.getElementById('close-history-btn').addEventListener('click', () => {
+            historyModal.style.display = 'none';
+        });
+
+        // Render History Data
+        socket.on('update-history-data', ({ historyData, players }) => {
+            const bodyEl = document.getElementById('history-modal-body');
+            if (!bodyEl) return;
+
+            const playerPool = players || cachedPlayersList;
+            bodyEl.innerHTML = '';
+
+            const days = Object.keys(historyData || {});
+            if (days.length === 0) {
+                bodyEl.innerHTML = '<p style="color:#888; font-style:italic; text-align:center;">No history recorded yet...</p>';
+                return;
+            }
+
+            const resolveName = (pId) => {
+                if (!pId) return '<span style="color:#666;">None</span>';
+                if (pId === 'abstain') return '<span style="color:#f39c12;">Abstained</span>';
+                const found = playerPool.find(p => p.persistentId === pId);
+                return found ? found.username : pId;
+            };
+
+            days.sort((a, b) => b - a).forEach(day => {
+                const dayDiv = document.createElement('div');
+                dayDiv.className = 'history-day-card';
+
+                let html = `<h4 style="margin:0 0 8px 0; color:#e74c3c;">Day ${day} Records</h4>`;
+                html += `<table class="history-table">
+                            <thead>
+                                <tr>
+                                    <th>Player</th>
+                                    <th>🌙 Night Visit Target</th>
+                                    <th>⚖️ Day Vote Target</th>
+                                </tr>
+                            </thead>
+                            <tbody>`;
+
+                const records = historyData[day];
+                Object.keys(records).forEach(persistentId => {
+                    const entry = records[persistentId];
+                    const actorName = resolveName(persistentId);
+                    const nightTarget = resolveName(entry.nightTarget);
+                    const dayVote = resolveName(entry.dayVote);
+
+                    html += `<tr>
+                                <td><b>${actorName}</b></td>
+                                <td style="color:#9b59b6;">${nightTarget}</td>
+                                <td style="color:#e67e22;">${dayVote}</td>
+                            </tr>`;
+                });
+
+                html += `</tbody></table>`;
+                dayDiv.innerHTML = html;
+                bodyEl.appendChild(dayDiv);
+            });
         });
     </script>
 </body>
