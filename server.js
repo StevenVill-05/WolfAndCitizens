@@ -3,6 +3,7 @@ const http = require('http');
 const { Server } = require('socket.io');
 const os = require('os');
 const QRCode = require('qrcode');
+const { recordDayVoteAction } = require('./historyHelper');
 
 // Import modular role action handlers & night resolution functions
 const { 
@@ -43,6 +44,7 @@ const controllerURL = `http://${localIP}:${PORT}/controller.html`;
 let players = [];
 let hostSocketId = null;
 let currentPhase = 'day'; // Default starting phase
+let currentDay = 1;
 
 // Route to generate a QR code data URL for the big screen to display
 app.get('/api/qrcode', async (req, res) => {
@@ -62,6 +64,9 @@ io.on('connection', (socket) => {
         const voter = players.find(p => p.id === socket.id);
         if (voter && voter.alive) {
             recordDayVote(voter.persistentId, targetId);
+
+            // Record the vote in history for the current day
+            recordDayVoteAction(currentDay, voter.persistentId, targetId);
             
             const targetPlayer = players.find(p => p.persistentId === targetId);
             const targetName = targetId === 'abstain' ? 'Abstain' : (targetPlayer ? targetPlayer.username : 'Unknown');
@@ -169,17 +174,18 @@ io.on('connection', (socket) => {
                 return;
             }
 
-            resolveNightActions(io, players);
+            // Pass currentDay into night resolution
+            resolveNightActions(io, players, currentDay);
             currentPhase = 'day';
         } else {
-            // Transitioning from Day -> Night: Resolve Day Voting First
             resolveDayVote(io, players);
             currentPhase = 'night';
+            currentDay++; // Increment day count when entering a new night/day cycle
             setTimeout(() => broadcastActionStatus(io, players), 100);
         }
 
-        console.log(`Phase changed to: ${currentPhase}`);
-        io.emit('phase-changed', { phase: currentPhase, players });
+        console.log(`Phase changed to: ${currentPhase} (Day ${currentDay})`);
+        io.emit('phase-changed', { phase: currentPhase, players, currentDay });
     });
     
     // Host manually kicks a player out

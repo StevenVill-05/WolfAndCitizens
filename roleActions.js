@@ -3,6 +3,7 @@ const grandWolf = require('./roles/grandWolf');
 const citizen = require('./roles/citizen');
 const seer = require('./roles/seer');
 const doctor = require('./roles/doctor');
+const { recordNightAction } = require('./historyHelper');
 
 const roleActions = {
     Wolf: wolf,
@@ -55,9 +56,9 @@ function broadcastActionStatus(io, players) {
         totalRequired: totalRequired,
         allReady: allReady
     });
-}
+}const { recordNightAction } = require('./historyHelper');
 
-function resolveNightActions(io, players) {
+function resolveNightActions(io, players, dayNum) {
     nightActionQueue.sort((a, b) => a.priority - b.priority);
 
     let savedTargetId = null;
@@ -73,32 +74,31 @@ function resolveNightActions(io, players) {
             const target = players.find(p => p.persistentId === action.targetId);
             const targetName = target ? target.username : 'Someone';
 
+            if (action.targetId) {
+                // 1. Record into centralized historyData helper
+                recordNightAction(dayNum || 1, actor.persistentId, action.targetId);
+
+                // 2. Generic player-to-player visit log for personal chronicle UI
+                actor.history.push({
+                    day: dayNum || 1,
+                    phase: 'Night',
+                    action: `Visited ${targetName}`,
+                    result: 'Action executed in the shadows.'
+                });
+            }
+
+            // Specific role resolution logic
             if (action.role === 'Wolf' || action.role === 'GrandWolf') {
                 if (action.targetId) {
                     wolfVotes[action.targetId] = (wolfVotes[action.targetId] || 0) + 1;
-                    actor.history.push({
-                        phase: 'Night',
-                        action: `Voted to strike ${targetName}`,
-                        result: 'Submitted decree to the pack.'
-                    });
                 }
             } else if (action.role === 'Doctor') {
                 savedTargetId = action.targetId;
-                actor.history.push({
-                    phase: 'Night',
-                    action: `Attempted to heal ${targetName}`,
-                    result: 'Healing potion administered.'
-                });
             } else if (action.role === 'Seer') {
                 const seerSocket = action.actorId;
                 if (target) {
                     io.to(seerSocket).emit('seer-result', { 
                         message: `Oracle vision: Target is a ${target.role}` 
-                    });
-                    actor.history.push({
-                        phase: 'Night',
-                        action: `Scryed into the soul of ${targetName}`,
-                        result: `Vision revealed role: ${target.role}`
                     });
                 }
             }
@@ -137,7 +137,6 @@ function resolveNightActions(io, players) {
     io.emit('game-log', { message: resultLog });
     io.emit('update-players', players);
 }
-
 // Add day vote tracking structures at the top of roleActions.js
 let dayVotes = {}; // Maps voterPersistentId -> targetPersistentId or 'abstain'
 

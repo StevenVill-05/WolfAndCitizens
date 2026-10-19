@@ -298,38 +298,29 @@
         // Sync player status on update
         socket.on('update-players', (players) => {
             cachedPlayers = players;
-            
+            renderTargetList();
+            renderDayVoteList();
+
             const me = players.find(p => p.persistentId === persistentId);
-            if (me) {
-                if (!me.alive) {
-                    isAlive = false;
-                    document.getElementById('game-container').style.display = 'none';
-                    document.getElementById('ghost-screen').style.display = 'block';
-                }
+            if (me && me.history) {
+                const historyList = document.getElementById('history-list');
+                if (historyList) {
+                    historyList.innerHTML = '';
 
-                if (me.history) {
-                    const historyList = document.getElementById('history-list');
-                    if (historyList) {
-                        historyList.innerHTML = '';
-                        if (me.history.length === 0) {
-                            historyList.innerHTML = '<p style="font-style: italic; color: #888;">No actions recorded yet...</p>';
-                        } else {
-                            me.history.forEach((record, index) => {
-                                const div = document.createElement('div');
-                                div.style.marginBottom = '6px';
-                                div.style.borderBottom = '1px dashed #333';
-                                div.style.paddingBottom = '4px';
-                                div.innerHTML = `<b>#${index + 1} [${record.phase}]</b>: ${record.action}<br><span style="color: #d4af37;">Outcome: ${record.result}</span>`;
-                                historyList.appendChild(div);
-                            });
-                        }
+                    if (me.history.length === 0) {
+                        historyList.innerHTML = '<p style="font-style: italic; color: #888;">No actions recorded yet...</p>';
+                        return;
                     }
-                }
-            }
 
-            if (isAlive) {
-                renderTargetList();
-                renderDayVoteList();
+                    me.history.forEach((record, index) => {
+                        const div = document.createElement('div');
+                        div.style.marginBottom = '6px';
+                        div.style.borderBottom = '1px dashed #333';
+                        div.style.paddingBottom = '4px';
+                        div.innerHTML = `<b>Day ${record.day || 1} [${record.phase}]</b>: ${record.action}<br><span style="color: #d4af37;">Outcome: ${record.result}</span>`;
+                        historyList.appendChild(div);
+                    });
+                }
             }
         });
 
