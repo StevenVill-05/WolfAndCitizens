@@ -206,6 +206,8 @@
 
     <button id="toggle-phase-btn">Switch to Night Phase</button>
 
+    <button id="restart-game-btn" style="font-family: 'Cinzel', serif; font-size: 13px; padding: 10px 18px; background: #333; color: #d8cca6; border: 1px solid #d4af37; border-radius: 4px; cursor: pointer; margin-left: 10px;">Restart Lobby</button>
+
     <!-- Floating Host History Trigger Button -->
     <button id="history-trigger-btn">📜 Host Archives Log</button>
 
@@ -337,6 +339,33 @@
             currentPlayers = players;
             renderPlayerCircle(players);
         });
+
+        // Restart Game Button Listener
+document.getElementById('restart-game-btn').addEventListener('click', () => {
+    if (confirm("Are you sure you want to restart the game and return all souls to the lobby?")) {
+        socket.emit('restart-game');
+    }
+});
+
+// Listen for game reset from server
+socket.on('game-restarted', (data) => {
+    
+    currentPlayers = data.players;
+    renderPlayerCircle(currentPlayers);
+    
+    // Reset phase UI back to Day 1
+    document.getElementById('phase-name').innerText = data.phase.toUpperCase();
+    document.getElementById('day-view').style.display = 'block';
+    document.getElementById('night-view').style.display = 'none';
+    document.getElementById('night-action-tracker').style.display = 'none';
+    
+    const toggleBtn = document.getElementById('toggle-phase-btn');
+    toggleBtn.innerText = 'Switch to Night Phase';
+    toggleBtn.style.background = '#a93226';
+    toggleBtn.disabled = false;
+
+    alert('The council session has been reset and roles have been redistributed!');
+});
 
         // Modal Controls & History Request
         const historyModal = document.getElementById('history-modal');

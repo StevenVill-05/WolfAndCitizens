@@ -3,7 +3,7 @@ const http = require('http');
 const { Server } = require('socket.io');
 const os = require('os');
 const QRCode = require('qrcode');
-const { getAllHistory, recordDayVoteAction } = require('./historyHelper');
+const { recordDayVoteAction, getAllHistory, resetHistory } = require('./historyHelper');
 
 // Import modular role action handlers & night resolution functions
 const { 
@@ -44,7 +44,8 @@ const controllerURL = `http://${localIP}:${PORT}/controller.html`;
 let players = [];
 let hostSocketId = null;
 let currentPhase = 'day'; // Default starting phase
-let currentDay = 0;
+let currentDay = 1;
+let activeRolePool = ['Wolf', 'Citizen', 'Seer', 'Doctor']; // Default fallback role pool
 
 // Route to generate a QR code data URL for the big screen to display
 app.get('/api/qrcode', async (req, res) => {
@@ -56,17 +57,65 @@ app.get('/api/qrcode', async (req, res) => {
     }
 });
 
+// Helper function to distribute roles and start/restart the game
+// Helper function to distribute roles and start/restart the game
+function assignRolesAndStart() {
+    currentDay = 1;
+    currentPhase = 'day';
+    resetHistory();
+
+    // 1. Create a role pool matching the active player count
+    let shuffledRoles = [...activeRolePool];
+
+    // Pad with Citizens if there are more players than roles in activeRolePool
+    while (shuffledRoles.length < players.length) {
+        shuffledRoles.push('Citizen');
+    }
+
+    // Trim pool if there are fewer players than selected roles
+    if (shuffledRoles.length > players.length) {
+        shuffledRoles = shuffledRoles.slice(0, players.length);
+    }
+
+    // 2. Fisher-Yates shuffle algorithm for true random distribution
+    for (let i = shuffledRoles.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [shuffledRoles[i], shuffledRoles[j]] = [shuffledRoles[j], shuffledRoles[i]];
+    }
+
+    // 3. Assign randomized roles to connected players
+    players.forEach((player, index) => {
+        const assignedRole = shuffledRoles[index];
+        player.role = assignedRole;
+        player.alive = true;
+        player.history = [];
+        
+        if (player.id) {
+            io.to(player.id).emit('assigned-role', { role: assignedRole });
+        }
+    });
+
+    console.log('Roles randomized on start/restart:', players.map(p => `${p.username}: ${p.role}`));
+
+    io.emit('game-restarted', { phase: currentPhase, players, currentDay });
+    io.emit('phase-changed', { phase: currentPhase, players, currentDay });
+}
+
 // Handle real-time socket connections from phones and PC
 io.on('connection', (socket) => {
 
-    // Send history data whenever the host requests it or connects
-socket.on('request-history-data', () => {
-    socket.emit('update-history-data', {
-        historyData: getAllHistory(),
-        players: players
+    socket.on('restart-game', () => {
+        console.log('Host initiated a game restart with role redistribution.');
+        assignRolesAndStart();
     });
-});
 
+    // Send history data whenever the host requests it or connects
+    socket.on('request-history-data', () => {
+        socket.emit('update-history-data', {
+            historyData: getAllHistory(),
+            players: players
+        });
+    });
 
     // Record day trial vote
     socket.on('submit-day-vote', ({ targetId }) => {
@@ -92,14 +141,15 @@ socket.on('request-history-data', () => {
         hostSocketId = socket.id;
         console.log(`Host screen registered: ${socket.id}`);
         socket.emit('update-players', players);
-        socket.emit('phase-changed', { phase: currentPhase, players });
+        socket.emit('phase-changed', { phase: currentPhase, players, currentDay });
         
         // If reconnecting during night, broadcast action tracking status immediately
         if (currentPhase === 'night') {
             broadcastActionStatus(io, players);
         }
     });
-// Register or reconnect phone controller using a persistent ID & Unique Username
+
+    // Register or reconnect phone controller using a persistent ID & Unique Username
     socket.on('register-player', ({ persistentId, username }, callback) => {
         let player = players.find(p => p.persistentId === persistentId);
 
@@ -147,8 +197,7 @@ socket.on('request-history-data', () => {
 
         if (player.role) {
             socket.emit('assigned-role', { role: player.role });
-            // CRITICAL FIX: Send the current phase so reloaded controllers match the game state immediately
-            socket.emit('phase-changed', { phase: currentPhase, players });
+            socket.emit('phase-changed', { phase: currentPhase, players, currentDay });
         }
 
         if (!player.alive) {
@@ -159,22 +208,12 @@ socket.on('request-history-data', () => {
     // Handle host starting the game with selected roles
     socket.on('start-game', (selectedRoles) => {
         console.log('Host started the game with roles:', selectedRoles);
-
-        players.forEach((player, index) => {
-            const assignedRole = selectedRoles[index % selectedRoles.length];
-            player.role = assignedRole;
-            player.alive = true;
-            
-            io.to(player.id).emit('assigned-role', { role: assignedRole });
-        });
-
-        currentPhase = 'day';
-        io.emit('game-started', players);
-        io.emit('phase-changed', { phase: currentPhase, players });
+        activeRolePool = selectedRoles; // Save role pool for restarts
+        assignRolesAndStart();
     });
 
     // Handle host switching between Day and Night phases
-   socket.on('toggle-phase', () => {
+    socket.on('toggle-phase', () => {
         if (currentPhase === 'night') {
             if (!areAllNightActionsSubmitted(players)) {
                 socket.emit('phase-toggle-rejected', {
@@ -186,10 +225,10 @@ socket.on('request-history-data', () => {
             // Pass currentDay into night resolution
             resolveNightActions(io, players, currentDay);
             currentPhase = 'day';
+            currentDay++; // Increment day count when entering a new night/day cycle
         } else {
             resolveDayVote(io, players);
             currentPhase = 'night';
-            currentDay++; // Increment day count when entering a new night/day cycle
             setTimeout(() => broadcastActionStatus(io, players), 100);
         }
 
@@ -197,10 +236,9 @@ socket.on('request-history-data', () => {
         io.emit('phase-changed', { phase: currentPhase, players, currentDay });
 
         io.emit('update-history-data', {
-        historyData: getAllHistory(),
-        players: players
-    });
-
+            historyData: getAllHistory(),
+            players: players
+        });
     });
     
     // Host manually kicks a player out
