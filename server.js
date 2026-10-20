@@ -23,6 +23,37 @@ const io = new Server(server);
 // Serve static files from the 'public' folder
 app.use(express.static('public'));
 
+// Function to evaluate if the game has been won
+function checkWinCondition(io, players) {
+    // Filter currently living players
+    const livingPlayers = players.filter(p => p.alive);
+
+    // Count wolves and town members among the living
+    const livingWolves = livingPlayers.filter(p => p.role === 'Wolf' || p.role === 'GrandWolf');
+    const livingCitizens = livingPlayers.filter(p => p.role !== 'Wolf' && p.role !== 'GrandWolf');
+
+    let winningFaction = null;
+
+    if (livingWolves.length === 0) {
+        winningFaction = 'Citizens';
+    } else if (livingWolves.length >= livingCitizens.length) {
+        winningFaction = 'Wolves';
+    }
+
+    if (winningFaction) {
+        console.log(`Game Over! Winner: ${winningFaction}`);
+        
+        // Broadcast game over event to Host and all players
+        io.emit('game-over', { winner: winningFaction, players });
+        
+        // Reset current phase to ended/lobby state if desired
+        currentPhase = 'ended';
+        return true;
+    }
+
+    return false;
+}
+
 // Helper function to find your computer's local IP address on your Wi-Fi/LAN
 function getLocalIP() {
     const interfaces = os.networkInterfaces();
@@ -224,10 +255,18 @@ io.on('connection', (socket) => {
 
             // Pass currentDay into night resolution
             resolveNightActions(io, players, currentDay);
+
+            // CHECK WIN CONDITION AFTER NIGHT RESOLUTION
+        if (checkWinCondition(io, players)) return; // Stop if game ended
+
+
             currentPhase = 'day';
             currentDay++; // Increment day count when entering a new night/day cycle
         } else {
             resolveDayVote(io, players);
+            // CHECK WIN CONDITION AFTER DAY TRIAL RESOLUTION
+        if (checkWinCondition(io, players)) return; // Stop if game ended
+        
             currentPhase = 'night';
             setTimeout(() => broadcastActionStatus(io, players), 100);
         }

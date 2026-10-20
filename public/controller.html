@@ -241,7 +241,7 @@
                 document.getElementById('ghost-screen').style.display = 'block';
             });
 
-            // Phase Changed Handling
+            // Phase Changed Handling// Phase Changed Handling
             socket.on('phase-changed', (data) => {
                 const dayCtrl = document.getElementById('day-controller');
                 const nightCtrl = document.getElementById('night-controller');
@@ -249,11 +249,17 @@
 
                 if (data.players) {
                     cachedPlayers = data.players;
-                    // Double-check our life status from server state list
+                    // FIX: Explicitly sync life status directly with server state!
                     const me = cachedPlayers.find(p => p.persistentId === persistentId);
-                    if (me && !me.alive) {
-                        isAlive = false;
+                    if (me) {
+                        isAlive = me.alive; // Sets to true if alive, false if dead
                     }
+                }
+
+                // Also make sure to wipe the victory banner here just in case!
+                const victoryBanner = document.getElementById('victory-banner');
+                if (victoryBanner) {
+                    victoryBanner.remove();
                 }
 
                 // CRITICAL FIX: IF DEAD, STAY IN GHOST REALM ONLY!
@@ -369,39 +375,64 @@
 
             // Listen for game restart and role redistribution from host
             socket.on('game-restarted', (data) => {
-                isAlive = true; // Revive all players on restart
-                selectedTargetId = null;
-                selectedDayVoteId = null;
+    isAlive = true; // Force revive locally
+    selectedTargetId = null;
+    selectedDayVoteId = null;
 
-                // Find my new role and status from the updated player list
-                const me = data.players.find(p => p.persistentId === persistentId);
-                if (me) {
-                    myRole = me.role;
-                    document.querySelectorAll('#role-display').forEach(el => el.innerText = myRole);
-                }
+    // 1. Forcefully remove any lingering victory banners
+    const victoryBanner = document.getElementById('victory-banner');
+    if (victoryBanner) {
+        victoryBanner.remove();
+    }
 
-                // Reset phone UI: hide waiting, ghost, and show active game container
-                document.getElementById('join-screen').style.display = 'none';
-                document.getElementById('waiting-screen').style.display = 'none';
-                document.getElementById('ghost-screen').style.display = 'none';
-                document.getElementById('game-container').style.display = 'block';
+    // 2. Find my new role from the updated player list
+    const me = data.players.find(p => p.persistentId === persistentId);
+    if (me) {
+        myRole = me.role;
+        document.querySelectorAll('#role-display').forEach(el => el.innerText = myRole);
+    }
 
-                // Reset action submission buttons & status text
-                document.getElementById('action-btn').style.display = 'none';
-                document.getElementById('submit-day-vote-btn').style.display = 'none';
-                document.getElementById('day-vote-status').innerText = '';
+    // 3. Reset phone UI screens
+    document.getElementById('join-screen').style.display = 'none';
+    document.getElementById('waiting-screen').style.display = 'none';
+    document.getElementById('ghost-screen').style.display = 'none';
+    document.getElementById('game-container').style.display = 'block';
 
-                // Clear wolf chat history / votes summary if applicable
-                const wolfBox = document.getElementById('wolf-chat-box');
-                if (wolfBox) wolfBox.innerHTML = '';
-                const wolfSummary = document.getElementById('wolf-votes-summary');
-                if (wolfSummary) wolfSummary.innerHTML = '';
+    // Reset action buttons & status text
+    document.getElementById('action-btn').style.display = 'none';
+    document.getElementById('submit-day-vote-btn').style.display = 'none';
+    document.getElementById('day-vote-status').innerText = '';
 
-                // Re-render target lists for the new round
-                cachedPlayers = data.players;
-                renderTargetList();
-                renderDayVoteList();
-            });
+    // Clear chat boxes
+    const wolfBox = document.getElementById('wolf-chat-box');
+    if (wolfBox) wolfBox.innerHTML = '';
+    const wolfSummary = document.getElementById('wolf-votes-summary');
+    if (wolfSummary) wolfSummary.innerHTML = '';
+
+    // Re-render target lists for the fresh round
+    cachedPlayers = data.players;
+    renderTargetList();
+    renderDayVoteList();
+});
+
+// Listen for game over event and display victory message
+          socket.on('game-over', (data) => {
+    isAlive = false; 
+    
+    document.getElementById('day-controller').style.display = 'none';
+    document.getElementById('night-controller').style.display = 'none';
+    
+    // Check if victory banner already exists to avoid duplicates
+    if (!document.getElementById('victory-banner')) {
+        const winMsg = document.createElement('div');
+        winMsg.id = 'victory-banner'; // <--- GIVE IT AN ID HERE
+        winMsg.style.cssText = 'background: #1c1817; border: 2px solid #d4af37; padding: 20px; margin-top: 20px; border-radius: 8px; font-family: "Cinzel", serif;';
+        winMsg.innerHTML = `<h2 style="color: #d4af37; margin-top:0;">🏆 Victory!</h2><p style="font-size: 16px; color: #fff;">The <b style="color:${data.winner === 'Wolves' ? '#e74c3c' : '#2ecc71'};">${data.winner}</b> have won the game!</p>`;
+        
+        document.getElementById('game-container').appendChild(winMsg);
+    }
+});
+
             
     // Listen for game reset from host
     socket.on('game-reset', () => {

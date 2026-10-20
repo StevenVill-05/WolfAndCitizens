@@ -231,6 +231,25 @@
 
         let currentPlayers = [];
 
+        socket.on('game-over', (data) => {
+    const phaseName = document.getElementById('phase-name');
+    if (phaseName) {
+        phaseName.innerText = `VICTORY: ${data.winner.toUpperCase()} WIN!`;
+        phaseName.style.color = data.winner === 'Wolves' ? '#e74c3c' : '#2ecc71';
+    }
+
+    // Disable phase toggle button
+    const toggleBtn = document.getElementById('toggle-phase-btn');
+    if (toggleBtn) {
+        toggleBtn.innerText = `The ${data.winner} have triumphed!`;
+        toggleBtn.style.background = '#333';
+        toggleBtn.disabled = true;
+    }
+
+    // Render final player statuses around the table
+    renderPlayerCircle(data.players);
+});
+
         // Listen for phase changes
         socket.on('phase-changed', (data) => {
             const dayView = document.getElementById('day-view');
@@ -349,22 +368,30 @@ document.getElementById('restart-game-btn').addEventListener('click', () => {
 
 // Listen for game reset from server
 socket.on('game-restarted', (data) => {
-    
     currentPlayers = data.players;
-    renderPlayerCircle(currentPlayers);
     
-    // Reset phase UI back to Day 1
-    document.getElementById('phase-name').innerText = data.phase.toUpperCase();
+    // 1. Reset Phase & Day Title Display back to normal
+    const phaseName = document.getElementById('phase-name');
+    if (phaseName) {
+        phaseName.innerText = 'DAY 1';
+        phaseName.style.color = '#d4af37'; // Reset back to gold
+    }
+
+    // 2. Re-enable and reset the toggle button
+    const toggleBtn = document.getElementById('toggle-phase-btn');
+    if (toggleBtn) {
+        toggleBtn.innerText = 'Switch to Night Phase';
+        toggleBtn.style.background = '#a93226';
+        toggleBtn.disabled = false;
+    }
+
+    // 3. Reset Arena Views
     document.getElementById('day-view').style.display = 'block';
     document.getElementById('night-view').style.display = 'none';
     document.getElementById('night-action-tracker').style.display = 'none';
-    
-    const toggleBtn = document.getElementById('toggle-phase-btn');
-    toggleBtn.innerText = 'Switch to Night Phase';
-    toggleBtn.style.background = '#a93226';
-    toggleBtn.disabled = false;
 
-    alert('The council session has been reset and roles have been redistributed!');
+    // 4. Re-render round table
+    renderPlayerCircle(currentPlayers);
 });
 
         // Modal Controls & History Request
