@@ -1,55 +1,64 @@
-const wolf = require('./roles/wolf');
-const grandWolf = require('./roles/grandWolf');
-const citizen = require('./roles/citizen');
-const seer = require('./roles/seer');
-const doctor = require('./roles/doctor');
-const { recordNightAction } = require('./historyHelper');
+// roleActions.js
+
+const { handleWolfAction } = require('./roles/wolf');
+const { handleDoctorAction } = require('./roles/doctor');
+const { handleCitizenAction } = require('./roles/citizen');
+const { handleClownAction } = require('./roles/clown');
+const { handleSeerAction } = require('./roles/seer');
+const { recordNightAction, recordDayVoteAction } = require('./historyHelper');
 
 const roleActions = {
-    Wolf: wolf,
-    GrandWolf: grandWolf,
-    Citizen: citizen,
-    Seer: seer,
-    Doctor: doctor
+    Wolf: handleWolfAction,
+    GrandWolf: handleWolfAction,
+    Doctor: handleDoctorAction,
+    Seer: handleSeerAction,
+    Citizen: handleCitizenAction,
+    Clown: handleClownAction
 };
 
 let nightActionQueue = [];
-let actedPersistentIds = new Set(); // Track persistent IDs of players who acted this night
+let actedPersistentIds = new Set();
+let dayVotes = {};
 
-function handlePlayerAction(socket, data, io, players) {
-    const player = players.find(p => p.id === socket.id);
+/**
+ * Handle incoming player action requests during Night
+ */
+function handlePlayerAction(socket, data, io, players, currentDay) {
+    const player = players.find(p => p.id === socket.id || (data && p.persistentId === data.persistentId));
     if (!player || !player.alive) return;
 
     if (!player.history) player.history = [];
 
     const role = player.role;
     if (roleActions[role]) {
-        roleActions[role](socket, data, io, players, nightActionQueue);
+        roleActions[role](socket, data, io, players, nightActionQueue, currentDay);
         
-        // Track that this player has taken an action
         actedPersistentIds.add(player.persistentId);
-
-        // Notify the host about updated action status
         broadcastActionStatus(io, players);
     }
 }
 
-// Check if all living players with active night roles (Wolf, GrandWolf, Doctor, Seer) have acted
+/**
+ * Check if required active night roles (Wolves, Doctor, Seer) have submitted actions
+ */
 function areAllNightActionsSubmitted(players) {
     const requiredRoles = ['Wolf', 'GrandWolf', 'Doctor', 'Seer'];
-    const activeLivingPlayers = players.filter(p => p.alive && requiredRoles.includes(p.role));
+    const activeLivingPlayers = players.filter(p => p.alive && p.connected && requiredRoles.includes(p.role));
 
+    if (activeLivingPlayers.length === 0) return true;
     return activeLivingPlayers.every(p => actedPersistentIds.has(p.persistentId));
 }
 
-// Send current completion stats (e.g., "2/3 players acted") to host
+/**
+ * Broadcast progress status of night actions to Host display
+ */
 function broadcastActionStatus(io, players) {
     const requiredRoles = ['Wolf', 'GrandWolf', 'Doctor', 'Seer'];
-    const activeLivingPlayers = players.filter(p => p.alive && requiredRoles.includes(p.role));
+    const activeLivingPlayers = players.filter(p => p.alive && p.connected && requiredRoles.includes(p.role));
     
     const countActed = activeLivingPlayers.filter(p => actedPersistentIds.has(p.persistentId)).length;
     const totalRequired = activeLivingPlayers.length;
-    const allReady = countActed >= totalRequired;
+    const allReady = totalRequired > 0 && countActed >= totalRequired;
 
     io.emit('night-status-update', {
         actedCount: countActed,
@@ -58,6 +67,9 @@ function broadcastActionStatus(io, players) {
     });
 }
 
+/**
+ * Resolve all night actions queued during the Witching Hour
+ */
 function resolveNightActions(io, players, dayNum) {
     nightActionQueue.sort((a, b) => a.priority - b.priority);
 
@@ -68,43 +80,19 @@ function resolveNightActions(io, players, dayNum) {
     const wolfVotes = {};
     
     nightActionQueue.forEach(action => {
-        const actor = players.find(p => p.id === action.actorId);
-        if (actor) {
-            if (!actor.history) actor.history = [];
-            const target = players.find(p => p.persistentId === action.targetId);
-            const targetName = target ? target.username : 'Someone';
+        const actor = players.find(p => p.id === action.actorId || p.persistentId === action.actorId);
+        if (actor && action.targetId) {
+            recordNightAction(dayNum || 1, actor.persistentId, action.targetId);
 
-            if (action.targetId) {
-                // 1. Record into centralized historyData helper
-                recordNightAction(dayNum || 1, actor.persistentId, action.targetId);
-
-                // 2. Generic player-to-player visit log for personal chronicle UI
-                actor.history.push({
-                    day: dayNum || 1,
-                    phase: 'Night',
-                    action: `Visited ${targetName}`,
-                    result: 'Action executed in the shadows.'
-                });
-            }
-
-            // Specific role resolution logic
             if (action.role === 'Wolf' || action.role === 'GrandWolf') {
-                if (action.targetId) {
-                    wolfVotes[action.targetId] = (wolfVotes[action.targetId] || 0) + 1;
-                }
+                wolfVotes[action.targetId] = (wolfVotes[action.targetId] || 0) + 1;
             } else if (action.role === 'Doctor') {
                 savedTargetId = action.targetId;
-            } else if (action.role === 'Seer') {
-                const seerSocket = action.actorId;
-                if (target) {
-                    io.to(seerSocket).emit('seer-result', { 
-                        message: `Oracle vision: Target is a ${target.role}` 
-                    });
-                }
             }
         }
     });
 
+    // Calculate majority vote among wolves
     let maxVotes = 0;
     for (const [targetId, count] of Object.entries(wolfVotes)) {
         if (count > maxVotes) {
@@ -115,12 +103,13 @@ function resolveNightActions(io, players, dayNum) {
 
     if (killedTargetId) {
         if (killedTargetId === savedTargetId) {
-            resultLog += `The attack was successfully saved by the Apothecary! `;
+            resultLog += `The attack was successfully thwarted by the Apothecary! `;
         } else {
             const victim = players.find(p => p.persistentId === killedTargetId);
             if (victim) {
                 victim.alive = false;
-                resultLog += `Tragedy befell the village. A cold body was found in the square at dawn. `;
+                resultLog += `Tragedy befell the village. ${victim.username} was slain in the dark. `;
+                
                 if (victim.id) {
                     io.to(victim.id).emit('player-eliminated');
                 }
@@ -130,32 +119,45 @@ function resolveNightActions(io, players, dayNum) {
         resultLog += `The night was quiet. No blood was spilled. `;
     }
 
-    // Reset night action tracking for the next cycle
+    // Clear night action queues
     nightActionQueue = [];
     actedPersistentIds.clear();
 
     io.emit('game-log', { message: resultLog });
     io.emit('update-players', players);
-}
-// Add day vote tracking structures at the top of roleActions.js
-let dayVotes = {}; // Maps voterPersistentId -> targetPersistentId or 'abstain'
 
-function recordDayVote(voterPersistentId, targetPersistentId) {
-    dayVotes[voterPersistentId] = targetPersistentId;
+    checkGameOver(io, players);
+
+    return resultLog;
 }
-function resolveDayVote(io, players) {
+
+/**
+ * Record a player's day vote choice
+ */
+function recordDayVote(voterPersistentId, targetPersistentId, dayNum) {
+    dayVotes[voterPersistentId] = targetPersistentId;
+    if (dayNum) {
+        recordDayVoteAction(dayNum, voterPersistentId, targetPersistentId);
+    }
+}
+
+/**
+ * Tally and resolve day trial banishing votes
+ */
+function resolveDayVote(io, players, dayNum) {
     const voteCounts = {};
     let totalVotesCast = 0;
     let totalAbstain = 0;
 
-    // Tally votes from living players
     players.filter(p => p.alive).forEach(player => {
         const targetId = dayVotes[player.persistentId];
+        recordDayVoteAction(dayNum || 1, player.persistentId, targetId || 'abstain');
 
         if (!targetId || targetId === 'abstain') {
             totalAbstain++;
             if (!player.history) player.history = [];
             player.history.push({
+                day: dayNum || 1,
                 phase: 'Day Trial',
                 action: 'Abstained from voting',
                 result: 'Chose not to cast a vote.'
@@ -167,6 +169,7 @@ function resolveDayVote(io, players) {
             const targetPlayer = players.find(p => p.persistentId === targetId);
             if (!player.history) player.history = [];
             player.history.push({
+                day: dayNum || 1,
                 phase: 'Day Trial',
                 action: `Voted to banish ${targetPlayer ? targetPlayer.username : 'Unknown'}`,
                 result: 'Vote submitted to trial.'
@@ -174,7 +177,6 @@ function resolveDayVote(io, players) {
         }
     });
 
-    // Find candidate with maximum votes
     let maxVotes = 0;
     let topCandidates = [];
 
@@ -189,34 +191,64 @@ function resolveDayVote(io, players) {
 
     let resultLog = `Day Trial Results: (${totalVotesCast} votes cast, ${totalAbstain} abstained). `;
 
-    // Handle Tie or No Votes
     if (topCandidates.length === 0 || maxVotes === 0) {
-        resultLog += `The council abstained. No one was hanged today.`;
+        resultLog += `The council abstained. No one was banished today.`;
     } else if (topCandidates.length > 1) {
-        resultLog += `The vote resulted in a tie (${maxVotes} votes each). The council could not reach consensus; no one was hanged!`;
+        resultLog += `The vote resulted in a tie (${maxVotes} votes each). No consensus was reached; no one was banished!`;
     } else {
-        // Clear majority winner
         const hangedPersistentId = topCandidates[0];
         const victim = players.find(p => p.persistentId === hangedPersistentId);
 
         if (victim) {
-            victim.alive = false; // Mark player dead on server
-            resultLog += `By majority decree, ${victim.username} was hanged in the village square! Their true role was ${victim.role}.`;
+            victim.alive = false;
+            resultLog += `By majority decree, ${victim.username} was banished from the council! Their secret role was ${victim.role}.`;
             
-            // Notify the victim's socket to switch to ghost screen
             if (victim.id) {
                 io.to(victim.id).emit('player-eliminated');
             }
         }
     }
 
-    // Clear day votes for the next cycle
     dayVotes = {};
 
     io.emit('game-log', { message: resultLog });
     io.emit('update-players', players);
-    
+
+    checkGameOver(io, players);
+
     return resultLog;
+}
+
+/**
+ * Check win conditions for Wolves vs Village
+ */
+function checkGameOver(io, players) {
+    const livingPlayers = players.filter(p => p.alive);
+    const livingWolves = livingPlayers.filter(p => p.role === 'Wolf' || p.role === 'GrandWolf');
+    const livingVillagers = livingPlayers.filter(p => p.role !== 'Wolf' && p.role !== 'GrandWolf');
+
+    let winner = null;
+
+    if (livingWolves.length === 0) {
+        winner = 'Citizens';
+    } else if (livingWolves.length >= livingVillagers.length) {
+        winner = 'Wolves';
+    }
+
+    if (winner) {
+        io.emit('game-over', { winner, players });
+    }
+
+    return winner;
+}
+
+/**
+ * Reset all internal state (used during game restart)
+ */
+function resetRoleActionState() {
+    nightActionQueue = [];
+    actedPersistentIds.clear();
+    dayVotes = {};
 }
 
 module.exports = { 
@@ -225,5 +257,7 @@ module.exports = {
     areAllNightActionsSubmitted,
     broadcastActionStatus,
     recordDayVote,
-    resolveDayVote
+    resolveDayVote,
+    checkGameOver,
+    resetRoleActionState
 };

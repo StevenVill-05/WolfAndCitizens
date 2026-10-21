@@ -432,6 +432,17 @@
         document.getElementById('game-container').appendChild(winMsg);
     }
 });
+// Listen for action confirmation from server
+socket.on('action-confirmed', (data) => {
+    const statusText = document.getElementById('night-action-status');
+    if (statusText) {
+        statusText.innerText = data.message;
+        statusText.style.color = '#f1c40f'; // Gold text for divine vision
+    }
+
+    // Hide target selection list once submitted
+    document.getElementById('action-btn').style.display = 'none';
+});
 
             
     // Listen for game reset from host
@@ -500,22 +511,26 @@
                 const modal = document.getElementById('history-modal');
                 modal.style.display = modal.style.display === 'none' ? 'block' : 'none';
             });
+// Confirm action decree
+document.getElementById('action-btn').addEventListener('click', () => {
+    if (!selectedTargetId) {
+        alert('You must select a target soul first!');
+        return;
+    }
 
-            // Confirm action decree
-            document.getElementById('action-btn').addEventListener('click', () => {
-                if (!selectedTargetId) {
-                    alert('You must select a target soul first!');
-                    return;
-                }
-                socket.emit('player-action', { targetId: selectedTargetId });
+    // Pass persistentId along with targetId
+    socket.emit('player-action', { 
+        targetId: selectedTargetId,
+        persistentId: persistentId 
+    });
 
-                if (myRole === 'Wolf' || myRole === 'GrandWolf') {
-                    socket.emit('wolf-vote-cast', { targetId: selectedTargetId });
-                }
+    if (myRole === 'Wolf' || myRole === 'GrandWolf') {
+        socket.emit('wolf-vote-cast', { targetId: selectedTargetId });
+    }
 
-                alert('Your decree has been locked in shadow.');
-                document.getElementById('action-btn').style.display = 'none';
-            });
+    alert('Your decree has been locked in shadow.');
+    document.getElementById('action-btn').style.display = 'none';
+});
 
             // Wolf Den Chat listeners
             document.getElementById('wolf-chat-send').addEventListener('click', sendWolfMessage);
