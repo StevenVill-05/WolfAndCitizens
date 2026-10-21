@@ -1,11 +1,25 @@
 // roleActions.js
 
-const { handleWolfAction } = require('./roles/wolf');
-const { handleDoctorAction } = require('./roles/doctor');
-const { handleCitizenAction } = require('./roles/citizen');
-const { handleClownAction } = require('./roles/clown');
-const { handleSeerAction } = require('./roles/seer');
-const { recordNightAction, recordDayVoteAction } = require('./historyHelper');
+// Safe module loader to support files in root or /roles subfolder
+function loadRoleModule(name) {
+    try {
+        return require(`./roles/${name}`);
+    } catch (e) {
+        try {
+            return require(`./${name}`);
+        } catch (err) {
+            console.error(`[Warning] Could not load role handler for ${name}:`, err.message);
+            return {};
+        }
+    }
+}
+
+const { handleWolfAction } = loadRoleModule('wolf');
+const { handleDoctorAction } = loadRoleModule('doctor');
+const { handleCitizenAction } = loadRoleModule('citizen');
+const { handleClownAction } = loadRoleModule('clown');
+const { handleSeerAction } = loadRoleModule('seer');
+const { recordNightAction, recordDayVoteAction } = loadRoleModule('historyHelper');
 
 const roleActions = {
     Wolf: handleWolfAction,
@@ -21,6 +35,14 @@ let actedPersistentIds = new Set();
 let dayVotes = {};
 
 /**
+ * Reset night tracking structures specifically at the start of each Night phase
+ */
+function prepareNightPhase() {
+    nightActionQueue = [];
+    actedPersistentIds.clear();
+}
+
+/**
  * Handle incoming player action requests during Night
  */
 function handlePlayerAction(socket, data, io, players, currentDay) {
@@ -31,18 +53,21 @@ function handlePlayerAction(socket, data, io, players, currentDay) {
 
     const role = player.role;
     if (roleActions[role]) {
-        roleActions[role](socket, data, io, players, nightActionQueue, currentDay);
+        const success = roleActions[role](socket, data, io, players, nightActionQueue, currentDay);
         
-        actedPersistentIds.add(player.persistentId);
-        broadcastActionStatus(io, players);
+        // Only mark player as acted if the action succeeded
+        if (success !== false) {
+            actedPersistentIds.add(player.persistentId);
+            broadcastActionStatus(io, players);
+        }
     }
 }
 
 /**
- * Check if required active night roles (Wolves, Doctor, Seer) have submitted actions
+ * Check if ALL living active players (including Citizens & Clown) have submitted night actions
  */
 function areAllNightActionsSubmitted(players) {
-    const requiredRoles = ['Wolf', 'GrandWolf', 'Doctor', 'Seer'];
+    const requiredRoles = ['Wolf', 'GrandWolf', 'Doctor', 'Seer', 'Citizen', 'Clown'];
     const activeLivingPlayers = players.filter(p => p.alive && p.connected && requiredRoles.includes(p.role));
 
     if (activeLivingPlayers.length === 0) return true;
@@ -50,10 +75,10 @@ function areAllNightActionsSubmitted(players) {
 }
 
 /**
- * Broadcast progress status of night actions to Host display
+ * Broadcast progress status of night actions (including Citizens & Clown) to Host display
  */
 function broadcastActionStatus(io, players) {
-    const requiredRoles = ['Wolf', 'GrandWolf', 'Doctor', 'Seer'];
+    const requiredRoles = ['Wolf', 'GrandWolf', 'Doctor', 'Seer', 'Citizen', 'Clown'];
     const activeLivingPlayers = players.filter(p => p.alive && p.connected && requiredRoles.includes(p.role));
     
     const countActed = activeLivingPlayers.filter(p => actedPersistentIds.has(p.persistentId)).length;
@@ -82,7 +107,9 @@ function resolveNightActions(io, players, dayNum) {
     nightActionQueue.forEach(action => {
         const actor = players.find(p => p.id === action.actorId || p.persistentId === action.actorId);
         if (actor && action.targetId) {
-            recordNightAction(dayNum || 1, actor.persistentId, action.targetId);
+            if (typeof recordNightAction === 'function') {
+                recordNightAction(dayNum || 1, actor.persistentId, action.targetId);
+            }
 
             if (action.role === 'Wolf' || action.role === 'GrandWolf') {
                 wolfVotes[action.targetId] = (wolfVotes[action.targetId] || 0) + 1;
@@ -92,7 +119,6 @@ function resolveNightActions(io, players, dayNum) {
         }
     });
 
-    // Calculate majority vote among wolves
     let maxVotes = 0;
     for (const [targetId, count] of Object.entries(wolfVotes)) {
         if (count > maxVotes) {
@@ -119,7 +145,7 @@ function resolveNightActions(io, players, dayNum) {
         resultLog += `The night was quiet. No blood was spilled. `;
     }
 
-    // Clear night action queues
+    // Reset night action tracking
     nightActionQueue = [];
     actedPersistentIds.clear();
 
@@ -136,7 +162,7 @@ function resolveNightActions(io, players, dayNum) {
  */
 function recordDayVote(voterPersistentId, targetPersistentId, dayNum) {
     dayVotes[voterPersistentId] = targetPersistentId;
-    if (dayNum) {
+    if (dayNum && typeof recordDayVoteAction === 'function') {
         recordDayVoteAction(dayNum, voterPersistentId, targetPersistentId);
     }
 }
@@ -151,7 +177,9 @@ function resolveDayVote(io, players, dayNum) {
 
     players.filter(p => p.alive).forEach(player => {
         const targetId = dayVotes[player.persistentId];
-        recordDayVoteAction(dayNum || 1, player.persistentId, targetId || 'abstain');
+        if (typeof recordDayVoteAction === 'function') {
+            recordDayVoteAction(dayNum || 1, player.persistentId, targetId || 'abstain');
+        }
 
         if (!targetId || targetId === 'abstain') {
             totalAbstain++;
@@ -256,6 +284,7 @@ module.exports = {
     resolveNightActions, 
     areAllNightActionsSubmitted,
     broadcastActionStatus,
+    prepareNightPhase,
     recordDayVote,
     resolveDayVote,
     checkGameOver,

@@ -2,10 +2,9 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const os = require('os');
-const path = require('path');
 const QRCode = require('qrcode');
-
-const { getAllHistory, resetHistory } = require('./historyHelper');
+const { recordDayVoteAction, getAllHistory, resetHistory } = require('./historyHelper');
+// Server.js (Top of file)
 
 // Import modular role action handlers & resolution functions
 const { 
@@ -13,21 +12,53 @@ const {
     resolveNightActions, 
     areAllNightActionsSubmitted, 
     broadcastActionStatus,
+    prepareNightPhase, 
     recordDayVote,
     resolveDayVote,
     checkGameOver,
     resetRoleActionState
 } = require('./roleActions');
 
+
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
-// Serve static files from root directory or 'public' subfolder
-app.use(express.static(__dirname));
-app.use(express.static(path.join(__dirname, 'public')));
+// Serve static files from the 'public' folder
+app.use(express.static('public'));
 
-// Helper function to find computer's local IP address on LAN/Wi-Fi
+// Function to evaluate if the game has been won
+function checkWinCondition(io, players) {
+    // Filter currently living players
+    const livingPlayers = players.filter(p => p.alive);
+
+    // Count wolves and town members among the living
+    const livingWolves = livingPlayers.filter(p => p.role === 'Wolf' || p.role === 'GrandWolf');
+    const livingCitizens = livingPlayers.filter(p => p.role !== 'Wolf' && p.role !== 'GrandWolf');
+
+    let winningFaction = null;
+
+    if (livingWolves.length === 0) {
+        winningFaction = 'Citizens';
+    } else if (livingWolves.length >= livingCitizens.length) {
+        winningFaction = 'Wolves';
+    }
+
+    if (winningFaction) {
+        console.log(`Game Over! Winner: ${winningFaction}`);
+        
+        // Broadcast game over event to Host and all players
+        io.emit('game-over', { winner: winningFaction, players });
+        
+        // Reset current phase to ended/lobby state if desired
+        currentPhase = 'ended';
+        return true;
+    }
+
+    return false;
+}
+
+// Helper function to find your computer's local IP address on your Wi-Fi/LAN
 function getLocalIP() {
     const interfaces = os.networkInterfaces();
     for (const name of Object.keys(interfaces)) {
@@ -44,54 +75,50 @@ const PORT = 3000;
 const localIP = getLocalIP();
 const controllerURL = `http://${localIP}:${PORT}/controller.html`;
 
-// Global State Tracking
+// State tracking
 let players = [];
 let hostSocketId = null;
-let currentPhase = 'day'; 
+let currentPhase = 'day'; // Default starting phase
 let currentDay = 1;
-let activeRolePool = ['Wolf', 'Citizen', 'Seer', 'Doctor'];
+let activeRolePool = ['Wolf', 'Citizen', 'Seer', 'Doctor']; // Default fallback role pool
 
-// Route to generate a QR code data URL for host lobby display
+// Route to generate a QR code data URL for the big screen to display
 app.get('/api/qrcode', async (req, res) => {
     try {
         const qrImageURL = await QRCode.toDataURL(controllerURL);
         res.json({ qrImageURL, controllerURL });
     } catch (err) {
-        res.status(500).json({ error: 'Error generating QR code' });
+        res.status(500).send('Error generating QR code');
     }
 });
 
-/**
- * Distribute randomized roles and commence new or restarted session
- */
+// Helper function to distribute roles and start/restart the game
+// Helper function to distribute roles and start/restart the game
 function assignRolesAndStart() {
     currentDay = 1;
     currentPhase = 'day';
-    
-    // Clear history and action queues
     resetHistory();
-    resetRoleActionState();
 
-    // 1. Construct role pool matching active player count
+    // 1. Create a role pool matching the active player count
     let shuffledRoles = [...activeRolePool];
 
-    // Pad with Citizens if player count exceeds role pool length
+    // Pad with Citizens if there are more players than roles in activeRolePool
     while (shuffledRoles.length < players.length) {
         shuffledRoles.push('Citizen');
     }
 
-    // Trim role pool if fewer players joined than selected bubbles
+    // Trim pool if there are fewer players than selected roles
     if (shuffledRoles.length > players.length) {
         shuffledRoles = shuffledRoles.slice(0, players.length);
     }
 
-    // 2. Fisher-Yates shuffle algorithm
+    // 2. Fisher-Yates shuffle algorithm for true random distribution
     for (let i = shuffledRoles.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
         [shuffledRoles[i], shuffledRoles[j]] = [shuffledRoles[j], shuffledRoles[i]];
     }
 
-    // 3. Assign roles to connected players
+    // 3. Assign randomized roles to connected players
     players.forEach((player, index) => {
         const assignedRole = shuffledRoles[index];
         player.role = assignedRole;
@@ -103,29 +130,61 @@ function assignRolesAndStart() {
         }
     });
 
-    console.log('Roles assigned for new round:', players.map(p => `${p.username}: ${p.role}`));
+    console.log('Roles randomized on start/restart:', players.map(p => `${p.username}: ${p.role}`));
 
     io.emit('game-restarted', { phase: currentPhase, players, currentDay });
     io.emit('phase-changed', { phase: currentPhase, players, currentDay });
 }
 
-// Handle real-time socket connections
+// Handle real-time socket connections from phones and PC
 io.on('connection', (socket) => {
-    console.log(`Device connected: ${socket.id}`);
 
-    // Register tab as Host screen
+    socket.on('restart-game', () => {
+        console.log('Host initiated a game restart with role redistribution.');
+        assignRolesAndStart();
+    });
+
+    // Send history data whenever the host requests it or connects
+    socket.on('request-history-data', () => {
+        socket.emit('update-history-data', {
+            historyData: getAllHistory(),
+            players: players
+        });
+    });
+
+    // Record day trial vote
+    socket.on('submit-day-vote', ({ targetId }) => {
+        const voter = players.find(p => p.id === socket.id);
+        if (voter && voter.alive) {
+            recordDayVote(voter.persistentId, targetId);
+
+            // Record the vote in history for the current day
+            recordDayVoteAction(currentDay, voter.persistentId, targetId);
+            
+            const targetPlayer = players.find(p => p.persistentId === targetId);
+            const targetName = targetId === 'abstain' ? 'Abstain' : (targetPlayer ? targetPlayer.username : 'Unknown');
+            
+            console.log(`Day Vote: ${voter.username} voted for ${targetName}`);
+            socket.emit('day-vote-confirmed', { targetName });
+        }
+    });
+     
+    console.log(`A device connected: ${socket.id}`);
+
+    // Register browser tab as the Host screen
     socket.on('register-host', () => {
         hostSocketId = socket.id;
         console.log(`Host screen registered: ${socket.id}`);
         socket.emit('update-players', players);
         socket.emit('phase-changed', { phase: currentPhase, players, currentDay });
         
+        // If reconnecting during night, broadcast action tracking status immediately
         if (currentPhase === 'night') {
             broadcastActionStatus(io, players);
         }
     });
 
-    // Register or reconnect player controller
+    // Register or reconnect phone controller using a persistent ID & Unique Username
     socket.on('register-player', ({ persistentId, username }, callback) => {
         let player = players.find(p => p.persistentId === persistentId);
 
@@ -150,7 +209,7 @@ io.on('connection', (socket) => {
             );
 
             if (nameExists) {
-                if (callback) callback({ success: false, error: 'Username is already taken!' });
+                if (callback) callback({ success: false, error: 'Username is already taken by another player!' });
                 return;
             }
 
@@ -180,66 +239,43 @@ io.on('connection', (socket) => {
             socket.emit('player-eliminated');
         }
     });
-
-    // Host initiates game start
+    
+    // Handle host starting the game with selected roles
     socket.on('start-game', (selectedRoles) => {
-        console.log('Host started game with roles:', selectedRoles);
-        activeRolePool = selectedRoles && selectedRoles.length > 0 ? selectedRoles : activeRolePool;
+        console.log('Host started the game with roles:', selectedRoles);
+        activeRolePool = selectedRoles; // Save role pool for restarts
         assignRolesAndStart();
     });
 
-    // Host restarts game session
-    socket.on('restart-game', () => {
-        console.log('Host triggered game restart.');
-        assignRolesAndStart();
-    });
-
-    // Host requests action history modal data
-    socket.on('request-history-data', () => {
-        socket.emit('update-history-data', {
-            historyData: getAllHistory(),
-            players: players
-        });
-    });
-
-    // Handle Day banishing vote submission
-    socket.on('submit-day-vote', ({ targetId }) => {
-        const voter = players.find(p => p.id === socket.id);
-        if (voter && voter.alive) {
-            recordDayVote(voter.persistentId, targetId, currentDay);
-            
-            const targetPlayer = players.find(p => p.persistentId === targetId);
-            const targetName = targetId === 'abstain' ? 'Abstain' : (targetPlayer ? targetPlayer.username : 'Unknown');
-            
-            console.log(`Day Vote: ${voter.username} voted for [${targetName}]`);
-            socket.emit('day-vote-confirmed', { targetName });
-        }
-    });
-
-    // Delegate night actions to role registry
-    socket.on('player-action', (data) => {
-        handlePlayerAction(socket, data, io, players, currentDay);
-    });
-// Toggle Phase between Day and Night
+    // Handle host switching between Day and Night phases
     socket.on('toggle-phase', () => {
         if (currentPhase === 'night') {
-            // Resolve queued actions even if some players did not submit in time
+            if (!areAllNightActionsSubmitted(players)) {
+                socket.emit('phase-toggle-rejected', {
+                    reason: 'Cannot switch to Day phase until all required night actions are submitted!'
+                });
+                return;
+            }
+
+            // Pass currentDay into night resolution
             resolveNightActions(io, players, currentDay);
 
-            if (checkGameOver(io, players)) return;
+            // CHECK WIN CONDITION AFTER NIGHT RESOLUTION
+        if (checkWinCondition(io, players)) return; // Stop if game ended
+
 
             currentPhase = 'day';
-            currentDay++;
+            currentDay++; // Increment day count when entering a new night/day cycle
         } else {
-            resolveDayVote(io, players, currentDay);
-
-            if (checkGameOver(io, players)) return;
-
+            resolveDayVote(io, players);
+            // CHECK WIN CONDITION AFTER DAY TRIAL RESOLUTION
+        if (checkWinCondition(io, players)) return; // Stop if game ended
+        
             currentPhase = 'night';
             setTimeout(() => broadcastActionStatus(io, players), 100);
         }
 
-        console.log(`Phase transitioned to: ${currentPhase.toUpperCase()} (Day ${currentDay})`);
+        console.log(`Phase changed to: ${currentPhase} (Day ${currentDay})`);
         io.emit('phase-changed', { phase: currentPhase, players, currentDay });
 
         io.emit('update-history-data', {
@@ -247,37 +283,39 @@ io.on('connection', (socket) => {
             players: players
         });
     });
-
-    // Host banishes/kicks a player
+    
+    // Host manually kicks a player out
     socket.on('kick-player', (persistentId) => {
-        console.log(`Host kicked player: ${persistentId}`);
+        console.log(`Host kicked player with ID: ${persistentId}`);
         const playerToKick = players.find(p => p.persistentId === persistentId);
-        if (playerToKick && playerToKick.id) {
+        if (playerToKick) {
             io.to(playerToKick.id).emit('kicked');
         }
         players = players.filter(p => p.persistentId !== persistentId);
         io.emit('update-players', players);
     });
 
-    // Wolf Den Chat
+    // Delegate player actions to our modular role actions registry
+    socket.on('player-action', (data) => {
+        handlePlayerAction(socket, data, io, players);
+    });
+
+    // Wolf Chat using Username
     socket.on('wolf-chat-message', (message) => {
         const sender = players.find(p => p.id === socket.id);
         if (sender && sender.alive && (sender.role === 'Wolf' || sender.role === 'GrandWolf')) {
-            const safeMsg = (message || '').trim();
-            if (!safeMsg) return;
-
             players.forEach(p => {
                 if (p.alive && (p.role === 'Wolf' || p.role === 'GrandWolf') && p.id) {
                     io.to(p.id).emit('incoming-wolf-message', {
                         sender: `${sender.username} (${sender.role})`,
-                        message: safeMsg
+                        message: message
                     });
                 }
             });
         }
     });
 
-    // Wolf Target Lock Notification
+    // Wolf Vote Notification using Username
     socket.on('wolf-vote-cast', ({ targetId }) => {
         const voter = players.find(p => p.id === socket.id);
         const target = players.find(p => p.persistentId === targetId);
@@ -293,25 +331,22 @@ io.on('connection', (socket) => {
         }
     });
 
-    // Spirit Realm / Ghost Chat
+    // Ghost Chat using Username
     socket.on('ghost-chat-message', (message) => {
         const sender = players.find(p => p.id === socket.id);
         if (sender && !sender.alive) {
-            const safeMsg = (message || '').trim();
-            if (!safeMsg) return;
-
             players.forEach(p => {
                 if (!p.alive && p.id) {
                     io.to(p.id).emit('incoming-ghost-message', {
                         name: sender.username || 'Spirit',
-                        message: safeMsg
+                        message: message
                     });
                 }
             });
         }
     });
 
-    // Handle Disconnections
+    // Handle disconnections (mark offline instead of deleting)
     socket.on('disconnect', () => {
         console.log(`Device disconnected: ${socket.id}`);
         
@@ -324,7 +359,7 @@ io.on('connection', (socket) => {
         const player = players.find(p => p.id === socket.id);
         if (player) {
             player.connected = false;
-            console.log(`Player marked offline: ${player.persistentId}`);
+            console.log(`Player went offline: ${player.persistentId}`);
             io.emit('update-players', players);
         }
     });
@@ -332,8 +367,8 @@ io.on('connection', (socket) => {
 
 server.listen(PORT, () => {
     console.log(`\n========================================`);
-    console.log(` Medieval Council Server Active!`);
-    console.log(` PC Host Lobby:  http://localhost:${PORT}`);
-    console.log(` Mobile Access:  ${controllerURL}`);
+    console.log(` Game server is running!`);
+    console.log(` PC Lobby:    http://localhost:${PORT}`);
+    console.log(` Phone Link:  ${controllerURL}`);
     console.log(`========================================\n`);
 });
